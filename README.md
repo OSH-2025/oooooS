@@ -2,7 +2,11 @@
 
 该小组由以下成员组成：
 
-陈琳波、刘时、李丁、罗浩民（组长）、赵于洋
+- [罗浩民（组长）](https://github.com/LuoHaomin)
+- [陈琳波](https://github.com/AsukirinaAI)
+- [刘时](https://github.com/LISTOI)
+- [李丁](https://github.com/AsuWhisper)
+- [赵于洋](https://github.com/LaoKuiZe)
 
 项目文档地址（当前为私有）：https://www.notion.so/OS-1aab81604736804c85eeedbab0b51d42?pvs=4
 
