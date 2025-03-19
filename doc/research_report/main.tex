@@ -46,5 +46,29 @@
 \input{content/RelatedWork.tex}
 
 \section{目标与预期成果}
-
+\begin{enumerate}
+    \item \textbf{安全性重构}
+    \begin{itemize}
+        \item 消除 RT-Thread Nano 内核中因 C 语言缺陷导致的\textbf{7 类高危漏洞}（空指针解引用、缓冲区溢出、UAF 等）
+        \item 通过 Rust 所有权模型和生命周期检查，实现\textbf{100\% 内存安全的内核核心模块}（调度器、内存管理）
+    \end{itemize}
+    
+    \item \textbf{实时性保障}
+    \begin{itemize}
+        \item 在 ARM Cortex-M4 硬件平台上，确保任务调度延迟 $\leq 3\mu s$（原版 C 实现 $5\mu s$），中断响应时间 $\leq 1\mu s$
+        \item 通过无锁数据结构（如 \texttt{crossbeam} 的原子队列）减少\textbf{上下文切换开销 15\%}
+    \end{itemize}
+    
+    \item \textbf{开发效率提升}
+    \begin{itemize}
+        \item 利用 Rust 宏（\texttt{macro\_rules!}）和泛型重构重复逻辑，减少\textbf{内核代码量 25\%}（从 12k 行 C 代码降至 9k 行 Rust 代码）
+        \item 通过 \texttt{Cargo} 模块化依赖管理，实现驱动开发编译时间缩短 \textbf{30\%}
+    \end{itemize}
+    
+    \item \textbf{生态兼容性}
+    \begin{itemize}
+        \item 保留 90\% 以上原有 C 语言驱动接口，通过 \texttt{bindgen/cbindgen} 工具实现\textbf{混合编程透明化}
+        \item 提供 \texttt{rt-thread-sys} 和 \texttt{rt-thread-safe} 双版本 SDK，支持开发者按需选择安全等级
+    \end{itemize}
+\end{enumerate}
 \end{document}

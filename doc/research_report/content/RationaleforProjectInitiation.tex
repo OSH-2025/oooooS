@@ -4,26 +4,31 @@
 
 \textbf{核心命题}：以Rust语言重构RT-Thread Nano内核，构建兼具\textbf{安全性、实时性和开发效率}的嵌入式实时操作系统。
 
-\subsection{重构范围与边界}
+\subsection{重构范围}
 
 \textbf{核心重构对象}：
 
 \begin{itemize}
-    \item 任务调度器（Scheduler）
-    \item 进程间通信（IPC）
-    \item 时钟管理（Timer）
-    \item 内存管理（Heap Allocator）
+    \item 任务调度器（Scheduler）：抢占式多任务调度
+    \item 进程间通信（IPC）：动态内存分配与碎片优化
+    \item 时钟管理（Timer）：信号量/消息队列同步机制
+    \item 内存管理（Heap Allocator）：硬件定时器与软件定时器
 \end{itemize}
 
 \subsection{技术可行性}
 
 \subsubsection{核心模块的Rust化改造}
-
+\b{Rust 调用 C 代码}
 \begin{itemize}
-    \item \textbf{Rust调用C代码}：\\使用\texttt{bindgen}工具自动生成RT-Thread内核API的Rust绑定（FFI），通过\texttt{extern "C"}声明保留原有C实现的模块，作为过渡阶段的兼容层。
-    \item \textbf{C调用Rust代码}：\\对Rust重构的安全抽象层（如内存分配器、智能锁），通过\texttt{cbindgen}生成C头文件，确保原有C代码（如HAL驱动）可无缝调用。
+    \item 使用 \texttt{bindgen} 自动生成 RT-Thread 内核 API 的 Rust 绑定（如 \texttt{rt\_thread\_create → unsafe extern "C"}）
+    \item 案例参考：Linux 内核模块通过 \texttt{\#[repr(C)]} 实现结构体对齐，已验证跨语言兼容性
 \end{itemize}
 
+\b{C 调用 Rust 代码}
+\begin{itemize}
+    \item 对安全抽象层（如内存分配器）使用 \texttt{\#[no\_mangle]} 暴露接口，通过 \texttt{cbindgen} 生成 C 头文件
+    \item 性能优化：在中断处理函数中采用 \texttt{\#[inline(always)]} 避免堆栈切换开销
+\end{itemize}
 
 \subsubsection{开发-调试工具链}
 
@@ -41,10 +46,17 @@
 \subsubsection{上板验证}
 
 PlatformIO可直接管理与真实设备的连接，并方便上板调试运行以测试。
+\begin{itemize}
+    \item 首阶段部署至 STM32F103C8T6 等多型号开发板（我们团队成员至少有4块不同型号的开发板），验证内核基本功能
+    \item 性能对比：与原版 C 内核进行基准测试（CoreMark 得分、任务切换耗时）
+\end{itemize}
 
-\subsubsection{原项目}
+\subsubsection{原项目支持}
 
-RT-Thread完全开源，且拥有丰富完整的文档以及相关生态。
+\begin{itemize}
+    \item 代码可移植性：RT-Thread Nano 内核代码量约 1.2 万行，模块化设计清晰（如 \texttt{kservice.c} 独立于硬件抽象层）
+    \item 社区支持：已有 Rust 嵌入式社区（如 \texttt{embedded-hal}）提供 GPIO/UART 驱动参考
+\end{itemize}
 
 \subsection{关键点}
 
