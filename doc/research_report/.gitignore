@@ -1,4 +1,4 @@
-# Ignore LaTeX intermediate files
+# 忽略LaTeX编译过程中生成的临时文件
 *.aux
 *.bbl
 *.blg
@@ -22,7 +22,6 @@
 *.synctex.gz
 *.dvi
 *.ps
-*.pdf
 *.nav
 *.snm
 *.vrb
