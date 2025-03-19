@@ -38,12 +38,11 @@
 
 \href{https://community.platformio.org/t/support-for-different-languages-and-compilers/921}{\texttt{PlatformIO Community}} 提出，PlatformIO可以自定义开发平台，其底层基于\textbf{SCons}，而SCons支持集成Rust。
 
-\subsubsection{仿真验证}
+\textbf{仿真环境}：
 
-\textbf{Wokwi}：配置\texttt{.wokwi.toml}模拟STM32硬件外设，实时可视化线程状态切换（如通过GPIO电平模拟调度器行为）。
+\textbf{Wokwi}：Wokwi可通过配置\texttt{wokwi.toml}与\texttt{diagram.json}来模拟多种开发板与外设，方便调试与验证。
 
-
-\subsubsection{上板验证}
+\textbf{调试与验证}：
 
 PlatformIO可直接管理与真实设备的连接，并方便上板调试运行以测试。
 \begin{itemize}
