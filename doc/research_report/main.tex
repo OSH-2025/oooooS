@@ -1,0 +1,50 @@
+\documentclass{ctexart}
+\usepackage{subfig,amsmath,amsthm,amssymb,bm,graphicx,hyperref,mathrsfs,algorithmic,algorithm,listings,xcolor,geometry} 
+\definecolor{mygreen}{rgb}{0,0.6,0}
+\definecolor{mygray}{rgb}{0.5,0.5,0.5}
+\definecolor{mymauve}{rgb}{0.58,0,0.82}
+\lstset{ %
+	backgroundcolor=\color{white},      % choose the background color
+	basicstyle=\footnotesize\ttfamily,  % size of fonts used for the code
+	columns=fullflexible,
+	tabsize=4,
+	breaklines=true,               % automatic line breaking only at whitespace
+	captionpos=b,                  % sets the caption-position to bottom
+	commentstyle=\color{mygreen},  % comment style
+	escapeinside={\%*}{*)},        % if you want to add LaTeX within your code
+	keywordstyle=\color{blue},     % keyword style
+	stringstyle=\color{mymauve}\ttfamily,  % string literal style
+	frame=single,
+	rulesepcolor=\color{red!20!green!20!blue!20},
+	% identifierstyle=\color{red},
+	language=Verilog,
+}
+\geometry{a4paper,left=2.5cm,right=2.5cm,top=2cm,bottom=2cm}
+\title{OooooS小组选题和调研报告}
+\author{罗浩民\;陈琳波\;赵于洋\;刘时\;李丁}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{前言}
+随着计算机科学与计算机工艺的不断进步，计算机内的可用资源逐渐增多。与此同时，用户对计算机的要求也逐渐多样化，从以前的重复计算，到足不出户访问世界，再到人机交互等等。但是在这过程中，不变的基本要求是安全性与便捷性。操作系统作为计算机系统的核心软件，它通过抽象底层硬件的控制信号为我们提供接口来使用，并且最大限度地保证系统资源的合理分配与限制意外情况的发生，其重要性日益凸显。近年来，Rust语言凭借其内存安全、并发处理和性能优化等特性，逐渐在系统软件领域崭露头角。
+本小组的大作业选题是“使用Rust语言改写RT-Thread”。通过这一选题，我们旨在深入探究Rust语言在操作系统开发中的应用潜力，同时提升我们对操作系统原理和实现的理解。在改写过程中，我们将重点关注Rust语言的内存安全特性如何与RT-Thread的设计理念相结合，以及这种结合如何带来更高的系统安全性和稳定性。
+
+为了全面了解改写RT-Thread的可行性和挑战，我们进行了深入的调研。调研内容涵盖了Rust语言的特性、RT-Thread的架构和源代码、以及相关的Rust语言编写操作系统的工作。通过调研，我们期望能够找到一条既能充分发挥Rust语言优势，又能保持RT-Thread原有特色的改写路径。
+
+在接下来的报告中，我们将详细介绍改写RT-Thread的项目背景、本次大作业的立项依据、该项改写工作的重要性、目前各界在该领域的相关工作和预期成果。我们相信，通过本次大作业的实践，我们将能够更深入地理解操作系统的原理和设计，同时为Rust语言在系统软件领域的应用积累宝贵的经验。
+\newpage
+\tableofcontents
+\newpage
+\input{content/backgroud.tex}
+
+\input{content/RationaleforProjectInitiation.tex}
+
+\input{content/search_importance.tex}
+
+\input{content/RelatedWork.tex}
+
+\section{目标与预期成果}
+
+\end{document}
