@@ -21,3 +21,13 @@
 \indent 正因为Rust在性能、内存安全和并发方面的独特优势，它成为了操作系统内核、嵌入式系统、WebAssembly、高性能计算 等领域的热门选择，并广泛应用于安全性要求极高的开发场景，如浏览器引擎（Firefox 的 Servo）、区块链（Solana）、云计算（AWS Firecracker）等。越来越多的公司和企业选择Rust语言来进行开发，如图\ref{fig1}。\\
 \indent 所以我们小组计划使用Rust语言对Rt-Thread系统的部分内核进行重构，以提升系统的安全性和性能，从而更好地满足嵌入式应用的需求。\\
 
+\subsection{当前Rust RTOS生态空缺}
+当前 Rust RTOS 生态中，主要有以下几个项目：
+\begin{figure}[htpb]
+    \centering
+    \caption{Rust RTOS生态\cite{AreWeRTOSYet}}
+    \includegraphics[width=0.5\linewidth]{img/Rust RTOS.png}
+    \label{fig2}
+\end{figure}
+
+可以看出 Rust 原生实时操作系统的开发已经取得了一定的进展，但是相比于 RT-Thread 这样的成熟的嵌入式操作系统，其生态仍然不够完善。因此，将 Rust 引入 RT-Thread 这样的成熟嵌入式操作系统，将会为 Rust RTOS 生态的发展提供重要的参考和借鉴。
