@@ -18,15 +18,15 @@
 \subsection{技术可行性}
 
 \subsubsection{核心模块的Rust化改造}
-\b{Rust 调用 C 代码}
+\textbf{Rust 调用 C 代码}
 \begin{itemize}
-    \item 使用 \texttt{bindgen} 自动生成 RT-Thread 内核 API 的 Rust 绑定（如 \texttt{rt\_thread\_create → unsafe extern "C"}）
+    \item 使用 \texttt{bindgen} 自动生成 RT-Thread 内核 API 的 Rust 绑定（如 \texttt{rt\_thread\_create → unsafe extern "C"}）\cite{RustBindgen}
     \item 案例参考：Linux 内核模块通过 \texttt{\#[repr(C)]} 实现结构体对齐，已验证跨语言兼容性
 \end{itemize}
 
-\b{C 调用 Rust 代码}
+\textbf{C 调用 Rust 代码}
 \begin{itemize}
-    \item 对安全抽象层（如内存分配器）使用 \texttt{\#[no\_mangle]} 暴露接口，通过 \texttt{cbindgen} 生成 C 头文件
+    \item 对安全抽象层（如内存分配器）使用 \texttt{\#[no\_mangle]} 暴露接口，通过 \texttt{cbindgen} 生成 C 头文件\cite{RustCbindgen}
     \item 性能优化：在中断处理函数中采用 \texttt{\#[inline(always)]} 避免堆栈切换开销
 \end{itemize}
 
@@ -36,11 +36,12 @@
 
 基于PlatformIO构建多语言工程。
 
-\href{https://community.platformio.org/t/support-for-different-languages-and-compilers/921}{\texttt{PlatformIO Community}} 提出，PlatformIO可以自定义开发平台，其底层基于\textbf{SCons}，而SCons支持集成Rust。
+{\texttt{PlatformIO Community}} 提出，PlatformIO可以自定义开发平台来支持多语言编译\cite{Kasbah_2016}。PlatformIO基于\textbf{SCons}\cite{PlatformIO_2025}进行构建，
+而Scons是一个开放源码、以Python语言编码的自动化构建工具，支持集成Rust\cite{SCons}。
 
 \textbf{仿真环境}：
 
-\textbf{Wokwi}：Wokwi可通过配置\texttt{wokwi.toml}与\texttt{diagram.json}来模拟多种开发板与外设，方便调试与验证。
+\textbf{Wokwi}：Wokwi可通过配置\texttt{wokwi.toml}与\texttt{diagram.json}来模拟多种开发板与外设，方便调试与验证。\cite{Wokwi}
 
 \textbf{调试与验证}：
 
@@ -53,7 +54,7 @@ PlatformIO可直接管理与真实设备的连接，并方便上板调试运行�
 \subsubsection{原项目支持}
 
 \begin{itemize}
-    \item 代码可移植性：RT-Thread Nano 内核代码量约 1.2 万行，模块化设计清晰（如 \texttt{kservice.c} 独立于硬件抽象层）
+    \item 代码可移植性：RT-Thread Nano 内核代码量约 1.2 万行，模块化设计清晰（如 \texttt{kservice.c} 独立于硬件抽象层）\cite{RTThreadDoc}
     \item 社区支持：已有 Rust 嵌入式社区（如 \texttt{embedded-hal}）提供 GPIO/UART 驱动参考
 \end{itemize}
 
