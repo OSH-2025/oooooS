@@ -200,4 +200,14 @@ qemu-arm -L /usr/arm-linux-gnueabihf build/myprogram
     \includegraphics[width=1\linewidth]{assets/meson_result.png}
     \caption{交叉编译测试结果}
     \label{cross_compilation}
+
+\subsubsection{可能存在的问题}
+\indent 因为我们小组打算最后在stm32开发板上测试改写后的系统，开发板使用的是ARM Cortex-M4F处理器。以上的测试使用的是CortexA系列的处理器。同样我也进行了测试，结果发现Meson在配置阶段对Rust编译器进行健全性检查时失败，报错\texttt{can't find crate for std}，因为默认的sanity.rs文件依赖标准库std，而目标\texxx{thumbv7m-none-eabi}是一个 bare-metal 环境，不支持std库。尝试设置环境变量 \texxx{MESON\_RUST\_SANITY\_RS} 指定自定义的\texxx{rust\_sanity.rs}文件（包含 \#![no_std] 和 panic\_handler），但发现 Meson未正确使用。
+
+\indent 最终选择绕过Meson的直接Rust编译，改用Cargo构建Rust代码，避开了健全性检查问题，最后再使用Meson链接Rust的静态库和C代码。这中途还需要手动将Rust编译出的静态库文件手动复制到cargo文件夹中。测试结果如图\ref{m4_result}，因为不能使用std库，所以写了一个死循环。
+\begin{figure}[!htpb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{assets/m4_result.png}
+    \caption{使用Cargo编译Rust代码}
+    \label{m4_test}
 \end{figure}
