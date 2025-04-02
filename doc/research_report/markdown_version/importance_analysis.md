@@ -80,13 +80,13 @@ Rust语言在操作系统开发中的应用已成为近年来技术革新的重�
 
 #### 4.3.1 技术层面的核心价值
 ##### 内存安全性提升
-Rust通过所有权（Ownership）和生命周期（Lifetime）机制，在编译阶段即可消除内存泄漏、野指针等常见问题。据统计，70%的系统漏洞源于内存安全问题。例如，微软通过Rust重构Windows内核模块，显著降低了漏洞风险。对于RT-Thread这类资源受限的嵌入式系统，Rust的内存安全保障能大幅提升系统稳定性，减少因内存错误导致的崩溃或安全事件。[^15]
+Rust通过所有权（Ownership）和生命周期（Lifetime）机制，在编译阶段即可消除内存泄漏、野指针等常见问题。据统计，70%的系统漏洞源于内存安全问题。例如，微软通过Rust重构Windows内核模块，显著降低了漏洞风险。对于RT-Thread这类资源受限的嵌入式系统，Rust的内存安全保障能大幅提升系统稳定性，减少因内存错误导致的崩溃或安全事件。[^23年Rust]
 
 ##### 高性能与低开销的平衡
-Rust的零成本抽象（Zero-cost Abstraction）特性允许开发者编写高效代码，性能接近C/C++，同时避免手动管理内存的复杂性。这对于RT-Thread的实时性要求至关重要，例如线程调度、中断处理等场景需极低延迟，Rust的编译优化能力可满足此类需求。[^17]
+Rust的零成本抽象（Zero-cost Abstraction）特性允许开发者编写高效代码，性能接近C/C++，同时避免手动管理内存的复杂性。这对于RT-Thread的实时性要求至关重要，例如线程调度、中断处理等场景需极低延迟，Rust的编译优化能力可满足此类需求。[^21年Rust]
 
 ##### 并发编程的天然优势
-Rust通过类型系统和“无畏并发”（Fearless Concurrency）设计，简化了多线程开发。RT-Thread作为多任务实时系统，常需处理线程间同步与通信（如信号量、消息队列），Rust的并发模型可减少数据竞争风险，提升代码健壮性。[^17]
+Rust通过类型系统和“无畏并发”（Fearless Concurrency）设计，简化了多线程开发。RT-Thread作为多任务实时系统，常需处理线程间同步与通信（如信号量、消息队列），Rust的并发模型可减少数据竞争风险，提升代码健壮性。[^21年Rust]
 
 #### 4.3.2 生态与行业趋势的适配性
 ##### 应对AI与物联网的融合需求
@@ -100,7 +100,7 @@ RT-Thread作为国产物联网操作系统的代表，其技术栈的自主性�
 
 [^vivo]: [vivo蓝河操作系统创新赛：让Rust从“有潜力”到“真落地”的关键一跃](https://news.qq.com/rain/a/20250226A08ZK500)
 
-[^15]: [Rust 为何会成为“香饽饽”？2023 年度 Rust 现状调查报告出炉！](https://www.163.com/dy/article/IRIF4EC30511FQO9.html)
+[^23年Rust]: [Rust 为何会成为“香饽饽”？2023 年度 Rust 现状调查报告出炉！](https://www.163.com/dy/article/IRIF4EC30511FQO9.html)
 
 [^unsafe_C1]: [不安全的语言：C语言](https://blog.csdn.net/dawn2dusk/article/details/89966217)
 
@@ -121,3 +121,5 @@ RT-Thread作为国产物联网操作系统的代表，其技术栈的自主性�
 [^unsafe_C2]: [为什么说 C 语言是编程语言中最不安全的？](https://www.51cto.com/article/765864.html)
 
 [^white_book]: [物联网操作系统安全白皮书](https://blog.nsfocus.net/wp-content/uploads/2022/09/iot-whitepaper.pdf)
+
+[^21年Rust]: [2021 年 Rust 行业调研报告](https://www.163.com/dy/article/GDB5DUVE0511FQO9.html)
