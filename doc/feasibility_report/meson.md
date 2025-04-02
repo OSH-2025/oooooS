@@ -56,11 +56,11 @@ rustup target add arm-unknown-linux-gnueabihf
 
 这里的c语言代码文件需要一些特殊的处理，如下图所示。
 
-[pictures/c_test.png](https://kimi.moonshot.cn/chat/assets/c_test.png)
+[img/c_test.png](https://kimi.moonshot.cn/chat/assets/c_test.png)
 
 Rust代码中需要声明C语言函数的接口，以便于C语言调用Rust函数。Rust函数需使用`#[no_mangle]`和`extern "C"`属性，确保函数名不被修饰并符合C调用约定，如下图所示。
 
-[pictures/rust_test.png](https://kimi.moonshot.cn/chat/assets/rust_test.png)
+[img/rust_test.png](https://kimi.moonshot.cn/chat/assets/rust_test.png)
 
 `meson.build`是Meson构建系统的核心配置文件，定义了项目的构建规则和依赖关系。这里只需要一句简单的`project('test_cross_compilation', 'c', 'rust')`，就能够实现项目的交叉编译，这是与其它构建系统相比的巨大优势。
 
@@ -98,7 +98,7 @@ c_exe = executable('myprogram', 'src/main.c', link_with: rust_lib)
 
 接下来是交叉编译的关键步骤，需要创建一个交叉编译配置文件`my_cross_file.txt`，该文件指定了目标平台、编译器和系统库等信息。图3是我们在测试时使用的配置。
 
-[pictures/cross_set.png](https://kimi.moonshot.cn/chat/assets/cross_set.png)
+[img/cross_set.png](https://kimi.moonshot.cn/chat/assets/cross_set.png)
 
 - **C 语言编译器**：使用`arm-linux-gnueabihf-gcc`进行C语言的交叉编译。
 - **C++ 语言编译器**：使用`arm-linux-gnueabihf-g++`进行C++代码编译。
@@ -124,7 +124,7 @@ qemu-arm -L /usr/arm-linux-gnueabihf build/myprogram
 
 如下图所示，成功运行了C语言调用Rust函数的测试程序。
 
-[pictures/meson_result.png](https://kimi.moonshot.cn/chat/assets/meson_result.png)
+[img/meson_result.png](https://kimi.moonshot.cn/chat/assets/meson_result.png)
 
 ### 可能存在的问题
 
@@ -132,6 +132,6 @@ qemu-arm -L /usr/arm-linux-gnueabihf build/myprogram
 
 最终选择绕过Meson的直接Rust编译，改用Cargo构建Rust代码，避开了健全性检查问题，最后再使用Meson链接Rust的静态库和C代码。这中途还需要手动将Rust编译出的静态库文件手动复制到cargo文件夹中。测试结果如下图，因为不能使用std库，所以写了一个死循环。
 
-[pictures/m4_result.png](https://kimi.moonshot.cn/chat/assets/m4_result.png)
+[img/m4_result.png](https://kimi.moonshot.cn/chat/assets/m4_result.png)
 
 [^meson_system^]: 
