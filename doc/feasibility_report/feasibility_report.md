@@ -100,6 +100,109 @@ RT-Thread 内核允许创建相同优先级的线程。相同优先级的线程�
 5. 保存当前线程的上下文，恢复目标线程的上下文。
 6. 启用中断，完成调度。
 
+```c
+void rt_schedule(void)
+{
+    rt_base_t level;
+    struct rt_thread *to_thread;
+    struct rt_thread *from_thread;
+
+    /* disable interrupt */
+    level = rt_hw_interrupt_disable();
+
+    /* check the scheduler is enabled or not */
+    if (rt_scheduler_lock_nest == 0)
+    {
+        rt_ubase_t highest_ready_priority;
+
+        if (rt_thread_ready_priority_group != 0)
+        {
+            /* need_insert_from_thread: need to insert from_thread to ready queue */
+            int need_insert_from_thread = 0;
+
+            to_thread = _scheduler_get_highest_priority_thread(&highest_ready_priority);
+
+            if ((rt_current_thread->stat & RT_THREAD_STAT_MASK) == RT_THREAD_RUNNING)
+            {
+                if (rt_current_thread->current_priority < highest_ready_priority)
+                {
+                    to_thread = rt_current_thread;
+                }
+                else if (rt_current_thread->current_priority == highest_ready_priority && (rt_current_thread->stat & RT_THREAD_STAT_YIELD_MASK) == 0)
+                {
+                    to_thread = rt_current_thread;
+                }
+                else
+                {
+                    need_insert_from_thread = 1;
+                }
+                rt_current_thread->stat &= ~RT_THREAD_STAT_YIELD_MASK;
+            }
+
+            if (to_thread != rt_current_thread)
+            {
+                /* if the destination thread is not the same as current thread */
+                rt_current_priority = (rt_uint8_t)highest_ready_priority;
+                from_thread         = rt_current_thread;
+                rt_current_thread   = to_thread;
+
+                RT_OBJECT_HOOK_CALL(rt_scheduler_hook, (from_thread, to_thread));
+
+                if (need_insert_from_thread)
+                {
+                    rt_schedule_insert_thread(from_thread);
+                }
+
+                rt_schedule_remove_thread(to_thread);
+                to_thread->stat = RT_THREAD_RUNNING | (to_thread->stat & ~RT_THREAD_STAT_MASK);
+
+                /* switch to new thread */
+                RT_DEBUG_LOG(RT_DEBUG_SCHEDULER,
+                        ("[%d]switch to priority#%d "
+                         "thread:%.*s(sp:0x%08x), "
+                         "from thread:%.*s(sp: 0x%08x)\n",
+                         rt_interrupt_nest, highest_ready_priority,
+                         RT_NAME_MAX, to_thread->name, to_thread->sp,
+                         RT_NAME_MAX, from_thread->name, from_thread->sp));
+
+                if (rt_interrupt_nest == 0)
+                {
+                    extern void rt_thread_handle_sig(rt_bool_t clean_state);
+
+                    RT_OBJECT_HOOK_CALL(rt_scheduler_switch_hook, (from_thread));
+
+                    rt_hw_context_switch((rt_ubase_t)&from_thread->sp,
+                            (rt_ubase_t)&to_thread->sp);
+
+                    /* enable interrupt */
+                    rt_hw_interrupt_enable(level);
+
+                    goto __exit;
+                }
+                else
+                {
+                    RT_DEBUG_LOG(RT_DEBUG_SCHEDULER, ("switch in interrupt\n"));
+
+                    rt_hw_context_switch_interrupt((rt_ubase_t)&from_thread->sp,
+                            (rt_ubase_t)&to_thread->sp);
+                }
+            }
+            else
+            {
+                rt_schedule_remove_thread(rt_current_thread);
+                rt_current_thread->stat = RT_THREAD_RUNNING | (rt_current_thread->stat & ~RT_THREAD_STAT_MASK);
+            }
+        }
+    }
+
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
+
+__exit:
+    return;
+}
+```
+
 ##### 系统线程
 
 - **空闲线程**：系统创建的最低优先级线程，状态始终为就绪态。当没有其他就绪线程时，调度器会切换到空闲线程。空闲线程用于回收被删除线程的资源，并提供钩子函数接口以执行功耗管理、看门狗喂狗等任务。
