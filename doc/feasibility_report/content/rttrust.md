@@ -1,6 +1,6 @@
 ### rttust工具介绍
 
-在调查过程中我们在GitHub上发现了一个名叫rttrust的开源项目[^rttrust]，可能对项目的开发有一定的帮助。rttrust是一个开源项目，旨在为rt-thread实时操作系统内核提供Rust包装。这意味着它允许我们使用Rust与rt-thread内核交互的。
+在调查过程中我们在GitHub上发现了一个名叫rttrust的开源项目[^rttrust]，可能对项目的开发有一定的帮助。rttrust是一个开源项目，旨在为rt-thread实时操作系统内核提供Rust包装。这意味着它允许我们使用Rust与rt-thread内核进行交互。
 
 rttrust提供了RT-Thread API在Rust中的映射，使Rust代码能够访问线程管理、内存管理和设备驱动等功能。这些绑定不仅减少了手写FFI代码的需求，还能确保Rust代码能够正确地调用RT-Thread内核的C API。
 
