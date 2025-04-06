@@ -7,11 +7,19 @@
   - [1 理论依据](#1-理论依据)
     - [1.1 RT-Thread内核分析](#11-rt-thread内核分析)
       - [1.1.1 线程管理](#111-线程管理)
+        - [线程控制块](#线程控制块)
+        - [调度过程](#调度过程)
+        - [系统线程](#系统线程)
+        - [线程栈](#线程栈)
+        - [线程切换](#线程切换)
+        - [rust改写方案](#rust改写方案)
       - [1.1.2 内存管理](#112-内存管理)
         - [具体管理方式](#具体管理方式)
         - [使用 Rust 进行改写分析](#使用-rust-进行改写分析)
         - [可能的解决方案](#可能的解决方案)
       - [1.1.3 时钟管理](#113-时钟管理)
+        - [clock.c](#clockc)
+        - [timer.c](#timerc)
       - [1.1.4 线程间同步与通信](#114-线程间同步与通信)
         - [模块内容与特点](#模块内容与特点)
         - [Rust改写的考虑](#rust改写的考虑)
@@ -29,7 +37,6 @@
   - [2 技术依据](#2-技术依据)
     - [2.1 Rust与C的联合编译](#21-rust与c的联合编译)
       - [2.1.1 Cargo](#211-cargo)
-        - [C与Rust的相互调用](#c与rust的相互调用)
         - [Rust调用C](#rust调用c)
         - [C 调用 Rust](#c-调用-rust)
       - [2.1.2 Scons](#212-scons)
@@ -49,11 +56,203 @@
   - [3. 总结](#3-总结)
       - [2.1.5 rttrust 工具介绍](#215-rttrust-工具介绍)
     - [2.2 调试与验证的可行性](#22-调试与验证的可行性)
+      - [rt-thread 启动流程与移植目录结构分析](#rt-thread-启动流程与移植目录结构分析)
+      - [PlatformIO平台简介以及编译流程分析](#platformio平台简介以及编译流程分析)
+      - [上板运行——基于CubeMX+PlatformIO+rt-thread的部署方法](#上板运行基于cubemxplatformiort-thread的部署方法)
+      - [模拟器验证方案](#模拟器验证方案)
+        - [QEMU简介](#qemu简介)
+        - [模拟](#模拟)
+        - [调试](#调试)
   - [3 参考文献](#3-参考文献)
 
 ## 1 理论依据
 ### 1.1 RT-Thread内核分析
 #### 1.1.1 线程管理
+
+RT-Thread 中的线程采用抢占式调度机制，同时支持时间片轮转调度方式。高优先级线程可以打断低优先级线程，而低优先级线程只有在高优先级线程阻塞或结束后才能获得调度权。
+
+系统支持 256 个优先级（0 到 255），数值越小优先级越高。优先级 0 是最高优先级，255 分配给空闲线程使用，用户通常不使用。在资源紧张的系统中，可以根据实际需求选择支持 8 或 32 个优先级。
+
+当所有就绪线程都链接到对应的优先级队列时，调度器会通过位图算法快速定位最高优先级的线程。位图算法的时间复杂度为 O(1)，与就绪线程的数量无关。
+
+RT-Thread 内核允许创建相同优先级的线程。相同优先级的线程采用时间片轮转方式进行调度，只有在没有更高优先级就绪线程时才有效。系统中的线程数量不受限制，仅取决于系统提供的内存资源。调度器会尽可能保证高优先级线程的运行。
+
+线程调度的原则是：当线程状态发生变化，并且当前运行的线程优先级低于优先级队列中最高优先级时，会立即进行线程切换（除非系统处于中断处理或禁止切换的状态）。
+
+##### 线程控制块
+
+线程控制块（`rt_thread`）用于管理线程的属性和状态，包括：
+
+- 线程名称、类型和标志位
+- 栈指针、入口函数指针、参数、栈地址和栈大小
+- 错误代码和线程状态
+- 当前优先级和初始优先级
+- 内置线程定时器和退出清除函数
+
+线程控制块通过链表（`rt_list_t`）存储，链表服务在 `rtservice.c` 中实现，线程相关行为在 `thread.c` 中定义。
+
+##### 调度过程
+
+调度函数 `rt_schedule` 的主要逻辑如下：
+
+1. 禁用中断，保护临界区。
+2. 检查调度器是否启用。
+3. 获取最高优先级的就绪线程。
+4. 如果当前线程优先级低于最高优先级，切换到最高优先级线程。
+5. 保存当前线程的上下文，恢复目标线程的上下文。
+6. 启用中断，完成调度。
+
+```c
+void rt_schedule(void)
+{
+    rt_base_t level;
+    struct rt_thread *to_thread;
+    struct rt_thread *from_thread;
+
+    /* disable interrupt */
+    level = rt_hw_interrupt_disable();
+
+    /* check the scheduler is enabled or not */
+    if (rt_scheduler_lock_nest == 0)
+    {
+        rt_ubase_t highest_ready_priority;
+
+        if (rt_thread_ready_priority_group != 0)
+        {
+            /* need_insert_from_thread: need to insert from_thread to ready queue */
+            int need_insert_from_thread = 0;
+
+            to_thread = _scheduler_get_highest_priority_thread(&highest_ready_priority);
+
+            if ((rt_current_thread->stat & RT_THREAD_STAT_MASK) == RT_THREAD_RUNNING)
+            {
+                if (rt_current_thread->current_priority < highest_ready_priority)
+                {
+                    to_thread = rt_current_thread;
+                }
+                else if (rt_current_thread->current_priority == highest_ready_priority && (rt_current_thread->stat & RT_THREAD_STAT_YIELD_MASK) == 0)
+                {
+                    to_thread = rt_current_thread;
+                }
+                else
+                {
+                    need_insert_from_thread = 1;
+                }
+                rt_current_thread->stat &= ~RT_THREAD_STAT_YIELD_MASK;
+            }
+
+            if (to_thread != rt_current_thread)
+            {
+                /* if the destination thread is not the same as current thread */
+                rt_current_priority = (rt_uint8_t)highest_ready_priority;
+                from_thread         = rt_current_thread;
+                rt_current_thread   = to_thread;
+
+                RT_OBJECT_HOOK_CALL(rt_scheduler_hook, (from_thread, to_thread));
+
+                if (need_insert_from_thread)
+                {
+                    rt_schedule_insert_thread(from_thread);
+                }
+
+                rt_schedule_remove_thread(to_thread);
+                to_thread->stat = RT_THREAD_RUNNING | (to_thread->stat & ~RT_THREAD_STAT_MASK);
+
+                /* switch to new thread */
+                RT_DEBUG_LOG(RT_DEBUG_SCHEDULER,
+                        ("[%d]switch to priority#%d "
+                         "thread:%.*s(sp:0x%08x), "
+                         "from thread:%.*s(sp: 0x%08x)\n",
+                         rt_interrupt_nest, highest_ready_priority,
+                         RT_NAME_MAX, to_thread->name, to_thread->sp,
+                         RT_NAME_MAX, from_thread->name, from_thread->sp));
+
+                if (rt_interrupt_nest == 0)
+                {
+                    extern void rt_thread_handle_sig(rt_bool_t clean_state);
+
+                    RT_OBJECT_HOOK_CALL(rt_scheduler_switch_hook, (from_thread));
+
+                    rt_hw_context_switch((rt_ubase_t)&from_thread->sp,
+                            (rt_ubase_t)&to_thread->sp);
+
+                    /* enable interrupt */
+                    rt_hw_interrupt_enable(level);
+
+                    goto __exit;
+                }
+                else
+                {
+                    RT_DEBUG_LOG(RT_DEBUG_SCHEDULER, ("switch in interrupt\n"));
+
+                    rt_hw_context_switch_interrupt((rt_ubase_t)&from_thread->sp,
+                            (rt_ubase_t)&to_thread->sp);
+                }
+            }
+            else
+            {
+                rt_schedule_remove_thread(rt_current_thread);
+                rt_current_thread->stat = RT_THREAD_RUNNING | (rt_current_thread->stat & ~RT_THREAD_STAT_MASK);
+            }
+        }
+    }
+
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
+
+__exit:
+    return;
+}
+```
+
+##### 系统线程
+
+- **空闲线程**：系统创建的最低优先级线程，状态始终为就绪态。当没有其他就绪线程时，调度器会切换到空闲线程。空闲线程用于回收被删除线程的资源，并提供钩子函数接口以执行功耗管理、看门狗喂狗等任务。
+- **主线程**：系统启动时创建，入口函数为 `main_thread_entry()`，用户的应用程序入口函数 `main()` 从这里开始运行。
+
+##### 线程栈
+
+线程栈的初始化函数 `rt_hw_stack_init` 用于设置线程的栈帧，包括：
+
+- 初始化寄存器（r0-r12、lr、pc、psr 等）
+- 设置入口函数、参数和退出函数
+- 返回初始化后的栈地址
+
+##### 线程切换
+
+线程切换通过汇编代码实现，主要步骤包括：
+
+1. **中断控制**：
+    - `rt_hw_interrupt_disable`：禁用全局中断，保护临界区。
+    - `rt_hw_interrupt_enable`：恢复中断状态。
+2. **上下文切换**：
+    - 触发 PendSV 异常，延迟上下文切换。
+    - 保存当前线程的寄存器状态到栈，恢复目标线程的寄存器状态。
+3. **首次任务切换**：
+    - 设置目标线程的栈指针，确保高优先级中断可抢占。
+4. **硬件异常处理**：
+    - `HardFault_Handler`：处理硬件异常，保存寄存器状态并调用错误分析函数。
+
+**关键数据结构与寄存器**
+
+- **PRIMASK**：控制全局中断使能，1 表示禁止中断。
+- **PSP/MSP**：线程栈指针（PSP）和主栈指针（MSP），区分任务与内核栈。
+- **ICSR**：中断控制寄存器，用于触发 PendSV 异常。
+- **SHPR3**：设置 PendSV 和 SysTick 的异常优先级，确保切换可被抢占。
+
+##### rust改写方案
+原有汇编相关代码保持不变
+
+- `context_XXX.S`
+- `cpuport.c`
+
+对结构体可以添加零成本抽象来易于阅读和使用。
+涉及的算法与数据结构：
+- 查找最高优先级
+    - 位图算法：原理是通过预计算表与分层检测实现高效的位扫描操作。
+- 就绪列表
+    - 对每个优先级各维护一个链表
+- 线程栈
 
 #### 1.1.2 内存管理
 RT-Thread 提供了多种内存管理方式，以适应不同应用需求：
@@ -129,6 +328,442 @@ Rust 的主要优势体现在以下几个方面。首先，内存安全性是其
 > Rust 的内存安全机制和类型系统可有效避免 C 语言中常见的内存泄漏与悬空指针问题，提升系统可靠性。在多线程环境中，Rust 也具备更高的线程安全性。但是，Rt-Thread对实时性和资源占用的严格要求使得直接替换存在挑战。所以可以考虑采用局部重构策略，仅在高风险模块中引 Rust，并结合无锁并发设计与 C 接口兼容方案，从而在不牺牲性能的前提下提高系统安全性和可维护性。
 
 #### 1.1.3 时钟管理
+
+
+##### clock.c
+
+`clock.c`中提供了关于系统时钟的获取，更改，自增的逻辑以及关于从毫秒转为系统时钟滴答数的逻辑，具体的分析如下：
+
+管理时钟节拍长度的宏：`RT_TICK_PER_SECOND`，在`rtconfig.h`中，默认为1000个/秒，即每个时钟节拍1ms。
+
+**时钟节拍的获取：**
+
+```c
+rt_tick_t rt_tick_get(void)
+{
+    /* return the global tick */
+    return rt_tick;
+}
+RTM_EXPORT(rt_tick_get);//使这个函数可以被其他模块访问
+```
+
+**时钟节拍的修改：**
+
+```c
+void rt_tick_set(rt_tick_t tick)
+{
+    rt_base_t level;
+
+    level = rt_hw_interrupt_disable();
+    rt_tick = tick;
+    rt_hw_interrupt_enable(level);
+}//原子操作，需要关开中断
+```
+
+**时钟节拍自增的逻辑，这是时间片轮转调度的核心：**
+
+```c
+void rt_tick_increase(void)
+{
+    struct rt_thread *thread;
+    rt_base_t level;
+
+    level = rt_hw_interrupt_disable();//关中断
+    
+    ++ rt_tick;//时钟节拍递增
+
+    /* check time slice */
+    thread = rt_thread_self();//获取当前线程
+
+    -- thread->remaining_tick;
+    if (thread->remaining_tick == 0)//如果当前线程到时间
+    {
+        /* change to initialized tick */
+        thread->remaining_tick = thread->init_tick;
+        thread->stat |= RT_THREAD_STAT_YIELD;//通知调度器这个线程需要被调度
+
+        rt_hw_interrupt_enable(level);//开中断
+        rt_schedule();//触发调度
+    }
+    else//否则继续当前线程
+    {
+        rt_hw_interrupt_enable(level);
+    }
+
+    /* check timer */
+    rt_timer_check();//检查定时器，具体见后文定时器部分解析
+}
+```
+
+时钟节拍自增由配置为中断触发模式的硬件定时器产生，当中断到来时，将调用一次：`void rt_tick_increase(void)`，通知操作系统已经过去一个系统时钟。具体的：
+
+```c
+void SysTick_Handler(void)
+{
+    /* 进入中断 */
+    rt_interrupt_enter();
+    
+    rt_tick_increase();
+    /* 退出中断 */
+    rt_interrupt_leave();
+}
+```
+
+最后是两个为用户态设计的函数，一个函数把用户输入的毫秒数转化为系统时钟数，一个返回系统运行到现在过去了多少毫秒（要求时钟节拍时间是1ms的整数倍）
+
+```c
+rt_tick_t rt_tick_from_millisecond(rt_int32_t ms)
+{
+    rt_tick_t tick;
+
+    if (ms < 0)
+    {
+        tick = (rt_tick_t)RT_WAITING_FOREVER;//永远等待下去
+    }
+    else
+    {
+        tick = RT_TICK_PER_SECOND * (ms / 1000);
+        tick += (RT_TICK_PER_SECOND * (ms % 1000) + 999) / 1000;
+    }
+
+    /* return the calculated tick */
+    return tick;
+}
+RTM_EXPORT(rt_tick_from_millisecond);
+```
+
+```c
+RT_WEAK rt_tick_t rt_tick_get_millisecond(void)
+{
+#if 1000 % RT_TICK_PER_SECOND == 0u
+    return rt_tick_get() * (1000u / RT_TICK_PER_SECOND);
+#else
+    #warning "rt-thread cannot provide a correct 1ms-based tick any longer,\
+    please redefine this function in another file by using a high-precision hard-timer."
+    return 0;
+#endif /* 1000 % RT_TICK_PER_SECOND == 0u */
+}
+```
+
+##### timer.c
+
+**定时器控制块，定时器链表与定时器跳表算法**
+
+```c
+struct rt_timer
+{
+    struct rt_object parent;                            /**< inherit from rt_object */
+
+    rt_list_t        row[RT_TIMER_SKIP_LIST_LEVEL];//这是定时器管理的核心，将在下面详细描述
+
+    void (*timeout_func)(void *parameter);              /**< timeout function */
+    void            *parameter;                         /**< timeout function's parameter */
+
+    rt_tick_t        init_tick;                         /**< timer timeout tick */
+    rt_tick_t        timeout_tick;                      /**< timeout tick */
+};
+typedef struct rt_timer *rt_timer_t;
+```
+
+定时器链表与跳表算法：
+
+在 RT-Thread 定时器模块中维护着两个重要的全局变量：
+
+（1）当前系统经过的 tick 时间 rt_tick（当硬件定时器中断来临时，它将加 1）；
+
+（2）定时器链表 rt_timer_list。系统新创建并激活的定时器都会按照以超时时间排序的方式插入到 rt_timer_list 链表中。
+
+如下图所示：
+
+![05timer_linked_list.png](./img/05timer_linked_list.png)
+
+在前面介绍定时器的工作方式的时候说过，系统新创建并激活的定时器都会按照以超时时间排序的方式插入到 rt_timer_list 链表中，也就是说 t_timer_list 链表是一个有序链表，RT-Thread 中使用了跳表算法来加快搜索链表元素的速度。
+
+跳表是一种基于并联链表的数据结构，实现简单，插入、删除、查找的时间复杂度均为 O(log n)。跳表是链表的一种，但它在链表的基础上增加了 “跳跃” 功能，正是这个功能，使得在查找元素时，跳表能够提供 O(log n)的时间复杂度，举例如下三图：
+
+![05timer_skip_list.png](./img/05timer_skip_list.png)
+
+![05timer_skip_list2.png](./img/05timer_skip_list2.png)
+
+![05timer_skip_list3.png](./img/05timer_skip_list3.png)
+
+在 RT-Thread 中通过宏定义 `RT_TIMER_SKIP_LIST_LEVEL` 来配置跳表的层数，默认为 1，表示采用一级有序链表图的有序链表算法，每增加一，表示在原链表基础上增加一级索引。在`timer.c`中，rt-thread维护数组`static rt_list_t _timer_list[RT_TIMER_SKIP_LIST_LEVEL]`。这个数组的第i个位置存储着上面跳表算法第i层的头指针，而之前我们在定时器控制块中对于每一个定时器有一个`row[RT_TIMER_SKIP_LIST_LEVEL]`数组，就存储的是跳表算法链表每一层的节点，但除了最底下一层，这些节点是随机加入链表而不是每个都加入，这样就构成了跳表链表的数据结构。举例来说，对于上面的三层链表，只有第一个节点（timeout是3）是row[0],row[1],row[2]都分别加入三层链表，而第四个（timeout是18），第六个（timeout是77）是row[0],row[1]加入第一第二层链表，其他是只有row[0]加入第一层链表。
+
+**定时器的管理方式**
+
+![05timer_ops.png](./img/05timer_ops.png)
+
+首先是在系统启动时需要初始化定时器管理系统。可以通过下面的函数接口完成
+`void rt_system_timer_init(void);`
+
+然后是定时器的创建/初始化，为什么要区分这两个看似功能相似的函数呢？因为rt-thread的内核以对象管理所有基础设施，而其中就包含一些初始的静态对象，这些对象的内存空间已经被分配，所以用init/detach来管理，如果系统初始拥有的静态对象不够，我们也可以动态的分配空间（需打开`RT_USING_HEAP`宏）来创造动态对象，这就是create/delete。下面只分析对静态对象的init/detach，因为操作十分类似。
+
+```c
+static void _timer_init(rt_timer_t timer,//定时器句柄
+                        void (*timeout)(void *parameter),//终止时调用的函数
+                        void      *parameter,//终止时调用函数的参数
+                        rt_tick_t  time,//定时时间
+                        rt_uint8_t flag//见代码后的分析)
+{
+    int i;
+
+    /* set flag */
+    timer->parent.flag  = flag;
+
+    /* set deactivated */
+    timer->parent.flag &= ~RT_TIMER_FLAG_ACTIVATED;//未激活
+
+    timer->timeout_func = timeout;
+    timer->parameter    = parameter;
+
+    timer->timeout_tick = 0;
+    timer->init_tick    = time;
+
+    /* initialize timer list */
+    for (i = 0; i < RT_TIMER_SKIP_LIST_LEVEL; i++)
+    {
+        rt_list_init(&(timer->row[i]));
+    }
+}
+
+```
+
+flag是定时器创建时的参数，支持的值包括单次定时、周期定时、硬件定时器、软件定时器等（可以用 “或” 关系取多个值。）具体的，单次定时和周期定时是字面意思不再解释，这里解释一下硬件定时器和软件定时器的区别：这里的“硬件“定时器不是指芯片本身提供的时钟，而是指超时函数在中断上下文环境下执行的定时器，即超时函数中不能有申请动态内存等会导致当前线程挂起的操作；与之对应的，”软件“定时器是指超时函数在系统初始化时建立的timer线程上下文下执行的定时器。这是超时函数的触发就更像线程调度一些。
+
+接着让我们看一下定时器的脱离函数：
+
+```c
+rt_err_t rt_timer_detach(rt_timer_t timer)//输入定时器的句柄
+{
+   ...
+
+    /* disable interrupt */
+    level = rt_hw_interrupt_disable();
+
+    _timer_remove(timer);
+    /* stop timer */
+    timer->parent.flag &= ~RT_TIMER_FLAG_ACTIVATED;
+
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
+
+    rt_object_detach(&(timer->parent));
+
+  ...
+}
+```
+
+```c
+rt_inline void _timer_remove(rt_timer_t timer)
+{
+    int i;
+
+    for (i = 0; i < RT_TIMER_SKIP_LIST_LEVEL; i++)
+    {
+        rt_list_remove(&timer->row[i]);
+    }
+}
+```
+
+接着让我们来看一下定时器的激活函数，这是定时器控制的重难点：
+
+```c
+rt_err_t rt_timer_start(rt_timer_t timer)
+{
+   ...
+
+    /* stop timer firstly */
+    level = rt_hw_interrupt_disable();
+    /* remove timer from list */
+    _timer_remove(timer);
+    /* change status of timer */
+    timer->parent.flag &= ~RT_TIMER_FLAG_ACTIVATED;
+		//先把当前定时器移出队列并设为未激活
+		...
+    timer->timeout_tick = rt_tick_get() + timer->init_tick;
+		...
+    /* insert timer to system timer list */
+    timer_list = _timer_list;//拿取当前队列进行修改
+		//跳表算法核心模块，作用是找到定时器的插入位置
+    row_head[0]  = &timer_list[0];
+    for (row_lvl = 0; row_lvl < RT_TIMER_SKIP_LIST_LEVEL; row_lvl++)
+    {
+        for (; row_head[row_lvl] != timer_list[row_lvl].prev;
+             row_head[row_lvl]  = row_head[row_lvl]->next)
+        {
+            struct rt_timer *t;
+            rt_list_t *p = row_head[row_lvl]->next;
+            /* fix up the entry pointer */
+            t = rt_list_entry(p, struct rt_timer, row[row_lvl]);
+            //如果终止时间一样，这里我们规定先开始的先结束
+            if ((t->timeout_tick - timer->timeout_tick) == 0)
+            {
+                continue;
+            }
+            else if ((t->timeout_tick - timer->timeout_tick) < RT_TICK_MAX / 2)
+            {//为什么是这样的？见代码后的分析
+                break;
+            }
+        }
+        if (row_lvl != RT_TIMER_SKIP_LIST_LEVEL - 1)
+            row_head[row_lvl + 1] = row_head[row_lvl] + 1;
+        //这里非常巧妙，应用了C语言对数组相邻位置分配的地址空间也相邻的性质
+    }
+    random_nr++;
+    tst_nr = random_nr;
+
+    rt_list_insert_after(row_head[RT_TIMER_SKIP_LIST_LEVEL - 1],
+                         &(timer->row[RT_TIMER_SKIP_LIST_LEVEL - 1]));//插入最下方的层
+    for (row_lvl = 2; row_lvl <= RT_TIMER_SKIP_LIST_LEVEL; row_lvl++)
+    {
+        if (!(tst_nr & RT_TIMER_SKIP_LIST_MASK))
+            rt_list_insert_after(row_head[RT_TIMER_SKIP_LIST_LEVEL - row_lvl],
+                                 &(timer->row[RT_TIMER_SKIP_LIST_LEVEL - row_lvl]));//随机插入上方的层
+        else
+            break;
+        tst_nr >>= (RT_TIMER_SKIP_LIST_MASK + 1) >> 1;
+    }
+
+    timer->parent.flag |= RT_TIMER_FLAG_ACTIVATED;//激活该定时器
+
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
+    ...
+}
+RTM_EXPORT(rt_timer_start);
+```
+
+为什么大小的判断逻辑会是形如`(t->timeout_tick - timer->timeout_tick) < RT_TICK_MAX / 2`这样的呢？这里使用了无符号数的性质。`timeout_tick`是一个32位无符号数，所以如果前面的数更小，就会形成一个负数，最高位为1，而`RT_TICK_MAX` 是0xffffffff，除2后首位刚好是零，这样就会继续而不是`break` ,但为什么要这么设计呢？因为`timeout_tick` 是可以循环出现的，即其加到`RT_TICK_MAX` 后可以从零重新开始递增。而rt-thread规定定时器的定时时间不会超过`RT_TICK_MAX / 2`，所以即使`timeout_tick` 溢出导致正负关系颠倒，其差会大于`RT_TICK_MAX / 2` ，使得结果依然不变。
+
+接着让我们来看一下简单的定时器的停止函数：
+
+```c
+rt_err_t rt_timer_stop(rt_timer_t timer)
+{
+    ...
+    if (!(timer->parent.flag & RT_TIMER_FLAG_ACTIVATED))
+        return -RT_ERROR;
+        
+    /* disable interrupt */
+    level = rt_hw_interrupt_disable();
+
+    _timer_remove(timer);
+    /* change status */
+    timer->parent.flag &= ~RT_TIMER_FLAG_ACTIVATED;
+
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
+    ...
+}
+RTM_EXPORT(rt_timer_stop);
+```
+
+最后让我们来看一下定时器的控制函数：
+
+```c
+rt_err_t rt_timer_control(rt_timer_t timer, int cmd, void *arg)
+{
+    ...
+    level = rt_hw_interrupt_disable();
+    switch (cmd)
+    {
+    case RT_TIMER_CTRL_GET_TIME:
+        *(rt_tick_t *)arg = timer->init_tick;
+        break;
+		//获取定时时间
+    case RT_TIMER_CTRL_SET_TIME:
+        RT_ASSERT((*(rt_tick_t *)arg) < RT_TICK_MAX / 2);
+        timer->init_tick = *(rt_tick_t *)arg;
+        break;
+		//修改定时时间——>对下一次激活才成立
+    case RT_TIMER_CTRL_SET_ONESHOT:
+        timer->parent.flag &= ~RT_TIMER_FLAG_PERIODIC;
+        break;
+		//设置为单次定时器
+    case RT_TIMER_CTRL_SET_PERIODIC:
+        timer->parent.flag |= RT_TIMER_FLAG_PERIODIC;
+        break;
+    //设置为周期定时器
+    case RT_TIMER_CTRL_GET_STATE:
+        if(timer->parent.flag & RT_TIMER_FLAG_ACTIVATED)
+        {
+            /*timer is start and run*/
+            *(rt_uint32_t *)arg = RT_TIMER_FLAG_ACTIVATED;
+        }
+        else
+        {
+            /*timer is stop*/
+            *(rt_uint32_t *)arg = RT_TIMER_FLAG_DEACTIVATED;
+        }
+        break;
+		//获取定时器状态
+    case RT_TIMER_CTRL_GET_REMAIN_TIME:
+        *(rt_tick_t *)arg =  timer->timeout_tick;
+        break;
+		//获取结束时间
+    default:
+        break;
+    }
+    rt_hw_interrupt_enable(level);
+    ...
+}
+RTM_EXPORT(rt_timer_control);
+```
+
+**定时器的超时检查与触发**
+
+还记得我们之前在时钟节拍自增函数最后留下的那个悬念吗？没错，就是那个`rt_timer_check()` 函数，这里让我们详细的解析一下其工作机理：
+
+```c
+void rt_timer_check(void)
+{
+    ...
+    current_tick = rt_tick_get();
+    /* disable interrupt */
+    level = rt_hw_interrupt_disable();
+    while (!rt_list_isempty(&_timer_list[RT_TIMER_SKIP_LIST_LEVEL - 1]))
+    {
+        t = rt_list_entry(_timer_list[RT_TIMER_SKIP_LIST_LEVEL - 1].next,
+                          struct rt_timer, row[RT_TIMER_SKIP_LIST_LEVEL - 1]);
+        //t代表着下一个定时器                  
+        if ((current_tick - t->timeout_tick) < RT_TICK_MAX / 2)//这个判断逻辑和start函数那个是一样的
+        {//下方是超时逻辑
+						...
+            /* remove timer from timer list firstly */
+            _timer_remove(t);
+            if (!(t->parent.flag & RT_TIMER_FLAG_PERIODIC))
+            {
+                t->parent.flag &= ~RT_TIMER_FLAG_ACTIVATED;
+            }
+            /* add timer to temporary list  */
+            rt_list_insert_after(&list, &(t->row[RT_TIMER_SKIP_LIST_LEVEL - 1]));
+            //防止超时函数对定时器链表的修改影响遍历过程
+            /* call timeout function */
+            t->timeout_func(t->parameter);
+            /* re-get tick */
+            current_tick = rt_tick_get();
+            /* Check whether the timer object is detached or started again */
+            if (rt_list_isempty(&list))
+            {
+                continue;
+            }
+            rt_list_remove(&(t->row[RT_TIMER_SKIP_LIST_LEVEL - 1]));
+            if ((t->parent.flag & RT_TIMER_FLAG_PERIODIC) &&
+                (t->parent.flag & RT_TIMER_FLAG_ACTIVATED))
+            {
+                /* start it */
+                t->parent.flag &= ~RT_TIMER_FLAG_ACTIVATED;
+                rt_timer_start(t);
+            }//对周期型定时器，重新启动
+        }
+        else break;
+    }
+
+    /* enable interrupt */
+    rt_hw_interrupt_enable(level);
+    ...
+}
+```
 #### 1.1.4 线程间同步与通信
 
 ##### 模块内容与特点
@@ -232,14 +867,15 @@ RT-Thread 的线程间通信与同步的实现在\src\ipc.c 文件中实现。RT
 
 在我们小组的项目中，我们希望实现一个C语言和Rust语言混合编程的系统，并最终编译出适用于ARM架构的可执行文件，最终在STM32芯片上进行测试。然而，为了实现这一目标，我们首先需要一个高效的构建系统，以便将原本用 C 语言编写的代码与我们用Rust语言改写的部分进行编译和链接，并最终生成可用于ARM平台的可执行文件。
 
+在进行`Rust`改写`RT-Thread`系统时，我们计划逐步替换核心组件并进行调试。在部分化Rust代码时，需要Rust模块与基于C语言的系统进行交互，我们需要进行`Rust`与`C`代码的的相互调用。
+
+在调研Rust与C相互调用的过程中，我们不但要考虑两种语言的特点，我们还需要考虑`RT-Thread`系统的特点，考虑其作为嵌入式系统的约束（如裸机环境、无标准库、低级内存操作等）。
+
 在选择合适的构建工具时，我们调研了几种流行的构建系统[^comparison]，包括SCons、Cargo和Meson。它们各自具备不同的特性和适用场景。下面我们将对这三种工具进行比较，并分别测试其在 C 语言与 Rust 语言混合编程场景下的可行性。
 
 在接下来的部分，我们将详细介绍如何使用这三种工具实现C和Rust代码的交叉编译。
 #### 2.1.1 Cargo
-##### C与Rust的相互调用
-在进行`Rust`改写`RT-Thread`系统时，我们计划逐步替换核心组件并进行调试。在部分化Rust代码时，需要Rust模块与基于C语言的系统进行交互，我们需要进行`Rust`与`C`代码的的相互调用。
 
-在调研Rust调用C的过程中，我们不但要考虑两种语言的特点，我们还需要考虑`RT-Thread`系统的特点，考虑其作为嵌入式系统的约束（如裸机环境、无标准库、低级内存操作等）。
 ##### Rust调用C
 在 Rust 中调用 C 语言的代码通常通过 **FFI（Foreign Function Interface）** 机制来实现。可以通过建立静态或动态链接实现 Rust 对 C 的调用，下面提供两种方式实现。
 1. 使用 `extern "C"` 声明 C 函数
@@ -475,7 +1111,7 @@ RT-Thread 本身采用 SCons 作为构建工具，其优势包括：
 
 ##### 使用Scons生成C的静态库
 Rust调用C代码需要在编译时链接C代码生成的静态库（.a文件）,以下是使用SCons生成C的静态库的方法：
->如何使用Cargo来调用生成的静态库，请看[使用Cargo在Rust中调用C](#Rust调用C)
+>如何使用Cargo来调用生成的静态库，请看[使用Cargo在Rust中调用C](#211-cargo)
 1. **文件结构：**
     ```
     .
@@ -944,7 +1580,7 @@ qemu-arm -L /usr/arm-linux-gnueabihf build/myprogram
 
 #### 2.1.5 rttrust 工具介绍
 
-在调查过程中我们在GitHub上发现了一个名叫rttrust的开源项目[^rttrust]，可能对项目的开发有一定的帮助。rttrust是一个开源项目，旨在为rt-thread实时操作系统内核提供Rust包装。这意味着它允许我们使用Rust与rt-thread内核交互的。
+在调查过程中我们在GitHub上发现了一个名叫rttrust的开源项目[^rttrust]，可能对项目的开发有一定的帮助。rttrust是一个开源项目，旨在为rt-thread实时操作系统内核提供Rust包装。这意味着它允许我们使用Rust与rt-thread内核进行交互。
 
 rttrust提供了RT-Thread API在Rust中的映射，使Rust代码能够访问线程管理、内存管理和设备驱动等功能。这些绑定不仅减少了手写FFI代码的需求，还能确保Rust代码能够正确地调用RT-Thread内核的C API。
 
@@ -961,6 +1597,191 @@ extern "C" {
 不过通过利用rttrust提供的这些功能，我们应该可以更加顺利地在RT-Thread内核中引入Rust内核组件，从而提升系统的安全性和稳定性。具体如何使用rttrust，是参考它的实现方式？还是直接使用它的API？这需要根据后续开始改写后才能决定。
 
 ### 2.2 调试与验证的可行性
+
+#### rt-thread 启动流程与移植目录结构分析
+
+我们的目标是要把rt-thread移植到特定的MCU上去，比如Cortex M,ARM等。为了达成这个目标，我们首先需要分析rt-thread的启动流程与移植目录结构。
+
+首先是rt-thread的启动流程，如下图所示：
+
+![startup1.png](./img/startup1.png)
+
+其中，首个文件startup_xx.S是特定MCU的启动文件，负责完成图示工作并且将控制转移到`rtthread_startup()`,这是rt-thread启动代码的统一入口，之后的启动了流程如下：
+
+1. 全局关中断，初始化与系统相关的硬件。
+2. 打印系统版本信息，初始化系统内核对象（如定时器、调度器）。
+3. 初始化用户 main 线程（同时会初始化线程栈），在 main 线程中对各类模块依次进行初始化。
+4. 初始化软件定时器线程、初始化空闲线程。
+5. 启动调度器，系统切换到第一个线程开始运行（如 main 线程），并打开全局中断。
+
+在了解了rt-thread的启动流程后，让我们来看一下其移植的目录结构：
+
+![nano-file.png](./img/nano-file.png)
+
+上图中绿色部分主要负责板级移植，需要用户根据MCU的不同型号实现系统时钟，OS tick等功能，黄色部分主要负责libcpu移植， libcpu 抽象层向下提供了一套统一的 CPU 架构移植接口，这部分接口包含了全局中断开关函数、线程上下文切换函数、时钟节拍的配置和中断函数、Cache 等等内容。
+
+具体的移植流程根据用户的开发板型号不同而不同，这里不做展开介绍，在第三部分会介绍本小组实现的部署流程。
+
+#### PlatformIO平台简介以及编译流程分析
+
+根据上面的分析，我们可以看到移植rt-thread需要自由的文件管理系统以及自由的编译流程指定，再结合上Rust和C的交叉编译也对编译工具的自由性提出了很高的要求。因此，市面上主流的一些工具如Keil,IAR,Clion等都没那么满足我们的要求，在这时，我们注意到了PlatformIO,一款开源的嵌入式系统开发工具，将它集成到VScode中使用能满足我们的大部分要求，下面我会对其做简要的介绍并分析其编译流程。
+
+PlatformIO 是一款面向嵌入式系统工程师以及为嵌入式产品编写应用程序的软件开发人员的跨平台、跨架构、多框架的专业工具。PlatformIO 在嵌入式市场中独特的理念为开发者提供了一个现代化的集成开发环境（云和桌面集成开发环境），该环境支持跨平台运行，兼容众多不同的软件开发工具包（SDK）或框架，并包含复杂的调试（调试）、单元测试（单元测试）、自动化代码分析（静态代码分析）以及远程管理（远程开发）等功能。其架构旨在最大程度地提高开发者的灵活性和选择性，开发者既可以使用图形编辑器，也可以使用命令行编辑器（PlatformIO 核心（命令行界面）），或者两者兼用。
+
+在不深入探讨 PlatformIO 实现细节的情况下，使用 PlatformIO 开发的项目的运行周期如下：
+
+- 用户在“platformio.ini”（项目配置文件）中选择感兴趣的开发板。
+- 根据这份开发板列表，PlatformIO 会自动下载所需的工具链并进行安装。
+- 用户编写代码，而 PlatformIO 则确保对其进行编译、准备，并上传到所有感兴趣的开发板上。
+
+我们主要关心的是Platformio的编译流程——即点击build按键后，Platformio是如何把整个项目编译成一份二进制文件等待上板的。
+
+Platformio使用SCons作为底层构建工具，它负责解析 `platformio.ini`，管理编译流程，并调用具体的编译工具链（如 `gcc` 或 `rustc`）。SCons 是用 Python 编写的构建系统，类似于 Make 或 CMake，但使用 Python 作为构建脚本语言。
+
+当你运行 `platformio run` 或点击 **Build** 按钮时，PlatformIO 会执行以下步骤：
+
+1.  **解析 `platformio.ini`**
+    
+    PlatformIO 读取 `platformio.ini` 来确定：
+    
+- 目标平台（如 `ststm32`）
+- 编译器（如 `arm-none-eabi-gcc`）
+- 依赖项（如 `lib_deps`）
+2.  **生成 SCons 构建环境**
+    
+    PlatformIO 使用 `SCons` 生成构建脚本（`.pio/build/{env}/scons_*.py`），这些脚本控制：
+    
+- 编译参数
+- 链接选项
+- 目标文件的依赖关系
+3.  **执行 SCons 构建**
+    
+    SCons 遍历 `src` 目录，编译 `.c` / `.cpp` 文件
+    
+    它使用 **SCons Builder** 调用编译器，生成`.o`文件
+    
+    最后，它调用编译器，链接所有的`.o`文件，并生成 `.elf` / `.bin` / `.hex` 文件
+    
+
+#### 上板运行——基于CubeMX+PlatformIO+rt-thread的部署方法
+
+下面将结合本小组的实际经验，给出一个基于STM32CubeMX+PlatformIO的rt-thread部署方法。
+
+首先简要介绍一下CubeMX，STM32CubeMX是ST公司推出的一种自动创建单片机工程及初始化代码的工具，适用于旗下所有STM32系列产品。CubeMX提供图形化界面供用户快速完成芯片的硬件配置，外设初始化以及中间件设置等工作。
+
+rt-thread是作为中间件集成到了CubeMX中，我们可以在CubeMX中配置芯片的时钟树，引脚，外设等，并且打开rt-thread的内核，最后把整个项目以MakeFile格式输出。
+
+之后我们进入rt-thread的界面，在项目中创建`platformio.ini`文件作为编译脚本，在其中指定硬件类型，头文件路径，内核文件路径，链接文件，调试工具，上传工具等，并根据官方文件指引改写`board.c` ，`startup_stm32f411xe.s`等文件，最后在`main.c`中编写用户程序。（具体见项目文件）
+
+最后本小组在stm32f411ceU6单片机上完成编译和上板验证，见下面的代码和视频。
+
+```c
+int main(void) {
+  rt_kprintf("Hello RT-thread! \r\n");
+  MX_GPIO_Init();
+  while(1) {
+    HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_SET);
+    rt_thread_mdelay(500);//rt-thread的延迟函数，意为延时500ms，此时，CPU可以继续处理其他事务（相当于线程调度）
+    HAL_GPIO_WritePin(GPIOA,GPIO_PIN_15,GPIO_PIN_RESET);
+    rt_thread_mdelay(500);
+  }
+}//这段代码实现了led灯的闪烁
+```
+运行视频见下
+[run.mp4](./img/run.mp4)
+
+#### 模拟器验证方案
+
+除了上板验证，我们还可以使用模拟器来验证我们的代码。我们选择了QEMU作为模拟器
+
+##### QEMU简介
+
+QEMU（Quick EMUlator）是一个开源的模拟器，用于模拟多种计算机硬件平台。它支持多种架构，包括但不限于x86、ARM、MIPS、SPARC等。QEMU可以模拟整个计算机系统，包括处理器、内存、外设等，也可以仅模拟处理器（用户模式）。
+
+QEMU可以模拟各种嵌入式硬件平台，如ARM Cortex-M系列处理器。我们可以在模拟环境中进行对内核进行开发和测试。并且通过模拟硬件，开发者可以在早期阶段验证代码的正确性，减少硬件依赖，加快开发周期。
+
+而QEMU支持与GDB（GNU Debugger）集成，提供强大的调试功能。开发者可以通过GDB连接到QEMU，进行单步调试、断点设置、变量检查等操作。QEMU还支持半主机（semihosting）模式，允许嵌入式程序与宿主机进行交互，例如通过宿主机的文件系统或控制台进行输入输出。更加方便了我们对内核的构建与调试。
+
+##### 模拟
+
+使用以下命令启动QEMU模拟器：
+
+```bash
+qemu-system-arm \
+  -cpu cortex-m3 \
+  -machine lm3s6965evb \
+  -nographic \
+  -semihosting-config enable=on,target=native \
+  -kernel target/xxxxxx
+```
+
+控制台输出simhosting信息，表示QEMU已启用半主机模式。我们可以在代码中使用`printf`或`rt_kprintf`等函数进行输出。
+
+示例：
+
+```rust
+#![no_std]
+#![no_main]
+
+use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
+
+use cortex_m::asm;
+use cortex_m_rt::entry;
+use cortex_m_semihosting::{debug, hprintln};
+
+#[entry]
+fn main() -> ! {
+
+    loop {
+        // your code goes here
+        hprintln!("Hello, world!");
+    }
+}
+```
+
+控制台输出如下：
+
+```bash
+Hello, world!
+```
+
+![Hello](./img/Hellos.png)
+
+这表明我们成功地在QEMU上运行了一个简单的嵌入式程序。
+
+##### 调试
+
+如果说单纯的simhosting输出还不够方便，我们还可以使用GDB进行调试。QEMU支持与GDB集成，允许我们在模拟器中进行单步调试、断点设置、变量检查等操作。
+
+通过以下命令启动GDB调试：
+
+```bash
+qemu-system-arm \
+  -cpu cortex-m3 \
+  -machine lm3s6965evb \
+  -nographic \
+  -semihosting-config enable=on,target=native \
+  -gdb tcp::3333 \
+  -S \
+  -kernel target/xxxxxx
+
+```
+
+借助`gdb-multiarch` / `gbd` /`arm-none-eabi-gdb`调试。示例：`gdb-multiarch target/xxxxx`
+
+VScode有调试插件可以配置。通过`Cortex-Debug`插件配置调试环境，可简化调试流程。
+
+> 可以在`.cargo/config`中配置一个自定义的运行指令来减化指令
+> 
+> 
+> ```bash
+> [target.thumbv7m-none-eabi]
+> # uncomment this to make `cargo run` execute programs on QEMU
+> runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semihosting-config enable=on,target=native -kernel"
+> ```
+> 
+> 就可以用`cargo run`运行了
+>
 
 ## 3 参考文献
 [^RTThread]: [RT-Thread Documentation](https://www.rt-thread.org/document/site/#/) (Accessed: 2025-03-18)
