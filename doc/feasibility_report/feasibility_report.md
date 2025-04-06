@@ -1,0 +1,933 @@
+# Rust 改写 RT-Thread 系统 可行性报告
+**OooooS小组(罗浩民 陈琳波 刘时 赵于洋 李丁)**
+
+## 目录
+- [Rust 改写 RT-Thread 系统 可行性报告](#rust-改写-rt-thread-系统-可行性报告)
+  - [目录](#目录)
+  - [1 理论依据](#1-理论依据)
+    - [1.1 RT-Thread内核分析](#11-rt-thread内核分析)
+      - [1.1.1 线程管理](#111-线程管理)
+      - [1.1.2 内存管理](#112-内存管理)
+        - [具体管理方式](#具体管理方式)
+        - [使用 Rust 进行改写分析](#使用-rust-进行改写分析)
+        - [可能的解决方案](#可能的解决方案)
+      - [1.1.3 时钟管理](#113-时钟管理)
+      - [1.1.4 线程间同步与通信](#114-线程间同步与通信)
+        - [模块内容与特点](#模块内容与特点)
+        - [Rust改写的考虑](#rust改写的考虑)
+      - [1.1.5 中断管理](#115-中断管理)
+        - [模块内容与特点](#模块内容与特点-1)
+        - [提供的服务](#提供的服务)
+        - [Rust改写的可行性分析](#rust改写的可行性分析)
+        - [可能的解决方案](#可能的解决方案-1)
+      - [1.1.6 原子操作](#116-原子操作)
+        - [模块内容与特点](#模块内容与特点-2)
+        - [提供的服务](#提供的服务-1)
+        - [Rust改写的可行性分析](#rust改写的可行性分析-1)
+        - [可能的解决方案](#可能的解决方案-2)
+    - [1.2 Rust改写的可行性](#12-rust改写的可行性)
+  - [2 技术依据](#2-技术依据)
+    - [2.1 Rust与C的联合编译](#21-rust与c的联合编译)
+      - [2.1.1 Cargo](#211-cargo)
+        - [C与Rust的相互调用](#c与rust的相互调用)
+        - [Rust调用C](#rust调用c)
+        - [C 调用 Rust](#c-调用-rust)
+      - [2.1.2 Scons](#212-scons)
+        - [SCons介绍](#scons介绍)
+        - [SCons构建Rust和C交叉编译的优势](#scons构建rust和c交叉编译的优势)
+        - [SCons构建RT-Thread的优势](#scons构建rt-thread的优势)
+        - [劣势与挑战](#劣势与挑战)
+        - [使用Scons生成C的静态库](#使用scons生成c的静态库)
+        - [Scons下在C中调用rust生成的静态库](#scons下在c中调用rust生成的静态库)
+      - [2.1.3 meson](#213-meson)
+        - [Meson介绍](#meson介绍)
+        - [配置meson系统环境](#配置meson系统环境)
+        - [创建Meson测试项目](#创建meson测试项目)
+        - [目标主机架构](#目标主机架构)
+        - [可能存在的问题](#可能存在的问题)
+      - [2.1.4 rttrust 工具介绍](#214-rttrust-工具介绍)
+    - [2.2 调试与验证的可行性](#22-调试与验证的可行性)
+  - [3 参考文献](#3-参考文献)
+
+## 1 理论依据
+### 1.1 RT-Thread内核分析
+#### 1.1.1 线程管理
+
+#### 1.1.2 内存管理
+RT-Thread 提供了多种内存管理方式，以适应不同应用需求：
+
+1. 动态内存堆管理：通过堆管理器在运行时动态分配和释放内存，支持小内存管理、slab 管理和 memheap 管理算法。
+2. 静态内存池管理：预先分配固定大小的内存块，提高分配效率并减少碎片化。
+
+##### 具体管理方式
+
+1. **小内存管理算法**：通过维护一个包含数据头的链表来管理内存块。数据头包含 magic 字段（用于检测非法访问）和 used 字段（标记当前内存块是否被分配）。
+2. **Slab 管理算法**：基于对象大小划分多个区（zone），每个 zone 包含多个 slab，每个 slab 由多个固定大小的内存块组成。这种方法减少了内存碎片，提高了分配效率。
+3. **Memheap 管理算法**：允许多个地址不连续的内存堆联合管理，提高了系统的灵活性。在分配内存时，系统会优先从默认内存堆分配，若不足则从其它堆中分配。
+4. **静态内存池管理**：在初始化时分配一块固定大小的内存，并将其划分为多个相同大小的块。线程在内存不足时可以挂起，等待可用内存块。
+
+##### 使用 Rust 进行改写分析
+
+**优势**
+
+Rust 语言的内存安全特性可以减少传统 C 语言实现中的内存泄漏和悬空指针问题，同时 Rust 的类型系统和借用检查器可以提供编译时安全保障。
+
+```c
+// RT-Thread 传统 C 语言内存管理示例
+void *rt_malloc(rt_size_t size) {
+    struct mem_block *block = find_free_block(size);
+    if (block) {
+        block->used = 1;
+        return (void *)(block + 1);
+    }
+    return NULL;
+}
+```
+
+上述 C 语言实现的 `rt_malloc` 函数首先调用 `find_free_block(size)` 查找适合的空闲内存块。如果找到，则将其 `used` 标记为 1，并返回指向该内存块的指针。如果找不到合适的块，则返回 `NULL`，表示分配失败。然而，这种实现依赖手动管理 `used` 状态，容易导致内存泄漏或悬空指针问题。
+
+rustCopy
+
+```rust
+// Rust 版本的内存管理示例
+struct MemBlock {
+    size: usize,
+    used: bool,
+}
+
+fn allocate(size: usize) -> Option<&'static mut MemBlock> {
+    let block = find_free_block(size)?;
+    block.used = true;
+    Some(block)
+}
+```
+
+Rust 版本的 `allocate` 函数利用 `Option` 处理分配失败的情况，避免 `NULL` 指针。`find_free_block(size)?` 使用 `?` 操作符，若找不到合适的内存块，则自动返回 `None`，减少显式错误处理代码。此外，Rust 的所有权系统能确保 `block` 在生命周期内不会被误用，从根本上杜绝 use-after-free 错误。
+
+Rust 的主要优势体现在以下几个方面。首先，内存安全性是其最突出的特点。Rust 的所有权系统能够有效防止 C 语言中常见的野指针和 use-after-free 错误，使得内存管理更加可靠。其次，Rust 在多线程环境下提供了更高的线程安全性。其无锁并发数据结构能够减少线程间的竞争，提高系统稳定性。此外，Rust 具有良好的模块化和可维护性。相比于 C 语言，Rust 更加强调代码的可读性和抽象能力，使得开发和维护更加高效。
+
+**挑战**
+
+将 RT-Thread 内存管理用 Rust 改写面临以下挑战：
+
+- 实时性要求高，Rust 默认的内存管理方式（如 `Rc`、`Arc`）可能引入非确定性延迟。
+- 需要兼容 C API，RT-Thread 的大部分 API 是用 C 语言编写的，Rust 需要与现有 C 代码进行交互。
+- 嵌入式资源占用少，但是 Rust 运行时相比 C 可能占用更 多的 ROM 和 RAM，可能不适合资源极为有限的设备。
+
+##### 可能的解决方案
+
+为减少 Rust 的额外开销并兼容 RT-Thread 的实时性需求，可考虑：
+
+- 使用 Rust 语言改写核心数据结构，如内存块管理。
+- 采用 **无锁并发** 方案，替换标准 `Mutex` 以避免优先级反转。
+- 同时可以考虑仅在高风险模块（如动态内存管理）使用 Rust，而保留性能关键部分的 C 代码
+
+**总结**
+
+> Rust 的内存安全机制和类型系统可有效避免 C 语言中常见的内存泄漏与悬空指针问题，提升系统可靠性。在多线程环境中，Rust 也具备更高的线程安全性。但是，Rt-Thread对实时性和资源占用的严格要求使得直接替换存在挑战。所以可以考虑采用局部重构策略，仅在高风险模块中引 Rust，并结合无锁并发设计与 C 接口兼容方案，从而在不牺牲性能的前提下提高系统安全性和可维护性。
+
+#### 1.1.3 时钟管理
+#### 1.1.4 线程间同步与通信
+
+##### 模块内容与特点
+RT-Thread 的线程间通信与同步的实现在\src\ipc.c 文件中实现。RT-Thread通过信号量（semaphore）、互斥量（mutex）和事件集（event）三个对象实现线程间同步，通过邮箱（mailbox）、消息队列（messagequeue）和信号（signal）实现的。
+
+其中要注意的关键点有：
+- **同步机制：**
+  - 互斥量通过优先级继承解决优先级翻转问题
+  - 事件集支持多事件的“或触发”和“与触发”模式，适用于复杂线程等待场景
+- **通信机制：**
+  - 邮箱固定单消息大小为 4 字节。
+  - 消息队列支持变长消息，通过内存池管理实现动态缓存。
+- **设计特点：**
+  - 基于面向对象思想，通过统一的内核对象模型管理资源（ `rt_object` 结构体）
+  - 支持静态与动态对象创建，适应不同资源约束场景。
+
+##### Rust改写的考虑
+ 1. 优点：
+     - 内存安全性：Rust 的所有权模型和生命周期机制可避免数据竞争和内存泄漏，尤其适用于多线程环境。
+    - 零成本抽象：Rust 的编译期检查与优化能力可保持与 C 相近的性能。
+    - 模式匹配与错误处理：通过 Result 和 Option 类型强制处理潜在错误，提升 IPC 接口的健壮性。
+     - 面向对象特性：Rust 支持封装，并通过 trait 实现多态，在使用 trait 时可以保证对象安全。
+ 2. 挑战：
+    - C 与 Rust 的内存模型差异：RT-Thread 的动态对象（如线程控制块）依赖手动内存管理，而 Rust 强制所有权机制，需通过智能指针实现安全封装。
+    - 中断上下文兼容性：Rust 的 Send 和 Sync 特性需适配 RT-Thread 的中断服务例程（ISR），避免在中断中触发未定义行为。
+    - 性能优化：Rust 的运行时检查（如边界检查）可能引入额外开销。
+
+**结论：**
+> 使用Rust改写RT-Thread系统的线程间通信和线程间同步模块在理论上具有较高的可行性。Rust的内存安全、并发模型和零成本抽象优势可以为RT-Thread系统带来更高的可靠性和安全性。然而，实际迁移过程中需要应对线程间的实时性要求、跨语言接口设计以及团队学习曲线等挑战。我们希望通过模块化设计、分步替换、测试与性能优化，实现向Rust的平滑迁移。
+#### 1.1.5 中断管理
+##### 模块内容与特点
+- **中断处理流程**：RT-Thread将中断处理分为中断前导程序、用户中断服务程序（ISR）和中断后续程序三部分。中断前导程序负责保存CPU现场并通知内核进入中断状态，用户ISR处理具体逻辑，中断后续程序恢复现场并离开中断状态。
+- **中断优先级与嵌套**：支持中断嵌套，高优先级中断可以打断低优先级中断服务程序。中断优先级由硬件（如Cortex-M的NVIC）管理。
+- **上下文切换**：通过PendSV异常辅助上下文切换，确保中断处理与线程调度的解耦。
+- **中断栈管理**：提供独立的中断栈，避免中断处理占用线程栈空间，提高内存利用率。
+- **底半处理（Bottom Half）**：将耗时操作从ISR中分离到线程上下文中，通过信号量、事件等机制通知线程进行后续处理。
+
+##### 提供的服务
+1. **中断服务程序挂接**：通过`rt_hw_interrupt_install()`将用户ISR与中断号关联。
+2. **中断源管理**：提供`rt_hw_interrupt_mask()`和`rt_hw_interrupt_umask()`屏蔽或恢复中断源。
+3. **全局中断开关**：通过`rt_hw_interrupt_disable()`和`rt_hw_interrupt_enable()`关闭或恢复中断，保护临界区。
+4. **中断通知**：通过`rt_interrupt_enter()`和`rt_interrupt_leave()`通知内核进入或离开中断状态。
+
+##### Rust改写的可行性分析
+
+**优势**
+1. **内存安全**：Rust的所有权系统和借用检查器可以避免C语言中常见的悬空指针和内存泄漏问题，尤其是在中断上下文中访问共享资源时。
+2. **并发安全性**：Rust的无锁并发数据结构可以减少中断处理中的竞态条件，提高系统稳定性。
+3. **模块化与可维护性**：Rust的强类型系统和抽象能力可以提高代码的可读性和可维护性，尤其是在复杂的中断处理逻辑中。
+
+**挑战与风险**
+1. **实时性要求**：Rust的某些特性（如`Rc`、`Arc`）可能引入非确定性延迟，影响中断处理的实时性。
+2. **C API兼容性**：RT-Thread的大部分API基于C语言实现，Rust需要与现有C代码进行交互，增加了复杂性。
+3. **资源占用**：Rust运行时可能比C语言占用更多ROM和RAM，不适合资源极度受限的嵌入式设备。
+4. **中断上下文的特殊性**：中断服务程序运行在特权模式下，无法直接使用Rust的某些高级特性（如动态内存分配）。
+
+##### 可能的解决方案
+- **无锁并发**：使用Rust的无锁数据结构（如`crossbeam`库）替代传统的锁机制，避免优先级反转。
+- **零成本抽象**：利用Rust的零成本抽象特性，在不牺牲性能的情况下提高代码的可读性。
+- **部分模块改写**：优先用Rust改写高风险模块（如中断底半处理），保留性能关键部分的C代码。
+
+**结论：**
+
+> 中断管理模块的代码虽然整体不多，但部分代码涉及到硬件与具体的架构，而且中断管理在内核中被广泛地使用（如上下文切换，原子操作），如若改写不好，可能会极大地降低系统的性能，改写需慎重。
+#### 1.1.6 原子操作
+##### 模块内容与特点
+- **原子性保证**：通过硬件指令或操作系统提供的原语，保证操作在多线程环境下不可分割。
+- **高效性**：原子操作通常比锁机制更高效，尤其是在简单的变量操作（如加减、交换）中。
+- **平台适配性**：RT-Thread在不同架构（如ARM、RISC-V）上提供了统一的原子操作API，底层实现依赖硬件支持。
+
+##### 提供的服务
+1. **原子读写**：`rt_atomic_load()`和`rt_atomic_store()`用于原子性地读取或写入变量。
+2. **原子运算**：`rt_atomic_add()`、`rt_atomic_sub()`等用于原子性地执行加减运算。
+3. **原子标志操作**：`rt_atomic_flag_test_and_set()`和`rt_atomic_flag_clear()`用于实现轻量级锁。
+4. **比较与交换**：`rt_atomic_compare_exchange_strong()`用于原子性地比较和交换值。
+
+##### Rust改写的可行性分析
+
+**优势**
+1. **内置原子操作支持**：Rust标准库提供了`std::sync::atomic`模块，直接支持原子操作，无需额外实现。
+2. **类型安全**：Rust的类型系统可以避免C语言中常见的类型错误，提高代码的健壮性。
+3. **并发安全性**：Rust的编译时检查可以防止数据竞争，确保原子操作的正确性。
+
+**挑战与风险**
+1. **硬件适配性**：Rust的原子操作依赖底层硬件支持，可能需要额外适配不同架构的RT-Thread实现。
+2. **性能开销**：Rust的某些安全特性可能引入额外开销，尤其是在对性能要求极高的场景中。
+3. **与C代码的交互**：RT-Thread的原子操作API需要与现有C代码兼容，增加了实现复杂性。
+
+##### 可能的解决方案
+- **利用Rust标准库**：直接使用Rust的`std::sync::atomic`模块，减少重复实现。
+- **条件编译**：通过条件编译适配不同架构的原子操作实现。
+- **FFI绑定**：为C语言的原子操作API提供Rust的FFI绑定，确保兼容性。
+
+**结论：**
+>RT-Thread的原子操作依赖于全局中断开关的实现，其本身没有什么复杂逻辑，都是关闭全局中断后进入临界区操作，而后恢复全局中断，整体而言没什么可改性。
+### 1.2 Rust改写的可行性
+
+## 2 技术依据
+### 2.1 Rust与C的联合编译
+交叉编译[^Cross_compiler]是指在一个架构的机器上（称为构建机器，*build machine*，例如 x86_64）编译出可供另一个不同架构的机器（称为目标机器，*host/target machine*，例如 ARM）运行的可执行代码。其本质是使用专门的工具链（编译器、链接器等）生成与目标架构兼容的二进制文件，而不需要在目标架构的硬件上直接编译。交叉编译器对于从一个开发主机编译多个平台的代码非常有用，尤其在目标平台计算资源有限（如嵌入式系统）或开发环境复杂时，直接在目标平台编译可能不可行。
+
+在我们小组的项目中，我们希望实现一个C语言和Rust语言混合编程的系统，并最终编译出适用于ARM架构的可执行文件，最终在STM32芯片上进行测试。然而，为了实现这一目标，我们首先需要一个高效的构建系统，以便将原本用 C 语言编写的代码与我们用Rust语言改写的部分进行编译和链接，并最终生成可用于ARM平台的可执行文件。
+
+在选择合适的构建工具时，我们调研了几种流行的构建系统[^comparison]，包括SCons、Cargo和Meson。它们各自具备不同的特性和适用场景。下面我们将对这三种工具进行比较，并分别测试其在 C 语言与 Rust 语言混合编程场景下的可行性。
+
+在接下来的部分，我们将详细介绍如何使用这三种工具实现C和Rust代码的交叉编译。
+#### 2.1.1 Cargo
+##### C与Rust的相互调用
+在进行`Rust`改写`RT-Thread`系统时，我们计划逐步替换核心组件并进行调试。在部分化Rust代码时，需要Rust模块与基于C语言的系统进行交互，我们需要进行`Rust`与`C`代码的的相互调用。
+
+在调研Rust调用C的过程中，我们不但要考虑两种语言的特点，我们还需要考虑`RT-Thread`系统的特点，考虑其作为嵌入式系统的约束（如裸机环境、无标准库、低级内存操作等）。
+##### Rust调用C
+在 Rust 中调用 C 语言的代码通常通过 **FFI（Foreign Function Interface）** 机制来实现。可以通过建立静态或动态链接实现 Rust 对 C 的调用，下面提供两种方式实现。
+1. 使用 `extern "C"` 声明 C 函数
+2. 使用 `bindgen` 自动生成绑定
+
+ **使用`extern "C"` 声明 C 函数**
+1. **文件结构：**
+    ```
+    .
+    ├── Cargo.toml          
+    ├── build.rs      
+    ├── csrc     
+    │   └── add.c   
+    └── src
+        └── main.rs 
+    ```
+
+2. **C代码准备**
+    ```c
+    // add.c
+    int add(int a, int b) {
+        return a + b;
+    }
+    ```
+   **Rust代码**
+   ```rust
+    // main.rs
+    extern "C" {
+        fn add(a: i32, b: i32) -> i32;
+    }
+
+    fn main() {
+        unsafe {
+            let result = add(3, 4);
+            println!("3 + 4 = {}", result);
+        }
+    }
+
+    // build.rs
+    fn main() {
+    cc::Build::new()
+        .file("csrc/add.c")
+        .compile("add");
+    }
+    ```
+    **Cargo.toml**
+    ```rust
+    [package]
+    name = "rust_static_link"
+    version = "0.1.0"
+    edition = "2024"
+    build = "build.rs"
+
+    [dependencies]
+
+    [build-dependencies]
+    cc = "1.0"
+    ```
+3. **构建后的目录框架**
+    ```
+    .
+    ├── build.rs                      # 用于构建 C 代码的脚本
+    ├── Cargo.toml                    # Rust 项目的配置文件
+    ├── csrc
+    │   └── add.c                     # C 代码文件
+    ├── src
+    │   └── main.rs                   # Rust 主程序
+    └── target
+        ├── debug
+        │   ├── deps
+        │   │   ├── rust_static_link.exe  # Rust 编译生成的可执行文件
+        │   │   ├── rust_static_link.pdb  # 调试符号文件
+        │   │   └── ...
+        │   ├── build
+        │   │   ├──rust_static_link-e3f7be2f5fe30a4b
+        │   │   ├── out
+        │   │   │   ├── add.lib           # 静态链接的 C 库文件（`add` 函数）
+        │   │   │   └── ...
+        │   │   └── ...
+        │   ├── rust_static_link.d        # 可执行文件的依赖信息
+        │   ├── rust_static_link.exe  
+        │   ├── rust_static_link.pdb  
+        │   └── incremental              # 增量编译缓存
+        └── ...            
+    ```
+4. **执行结果**
+    ```
+    $ cargo run
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running `target\debug\rust_static_link.exe`
+    3 + 4 = 7
+    ```
+
+**使用 `bindgen` 自动生成绑定**
+
+bindgen 工具可以手动调用（或通过 build.rs 构建脚本调用）以创建相应的 Rust 文件.
+代码如下：
+```c
+#ifndef FOO_H
+#define FOO_H
+
+int add(int a, int b);
+
+#endif
+
+```
+由bindgen自动生成 Rust 代码如下：
+```
+/* automatically generated by rust-bindgen 0.69.5 */
+
+extern "C" {
+    pub fn add(a: ::std::os::raw::c_int, b: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
+}
+```
+这可以很方便的处理大量C函数的处理要求，对我们项目的构建很有帮助。
+
+##### C 调用 Rust
+**使用静态链接调用 Rust**
+1. **文件结构**
+   ```
+    .
+    ├── Makefile
+    ├── main
+    ├── main.c
+    └── rustlib
+        ├── Cargo.lock
+        ├── Cargo.toml
+        ├── src
+        │   └── lib.rs
+        └── target
+            ├── CACHEDIR.TAG
+            └── release
+                ├── build
+                ├── deps
+                │   ├── librustlib-499510f3cbdd2024.a
+                │   └── rustlib-499510f3cbdd2024.d
+                ├── examples
+                ├── incremental
+                ├── librustlib.a
+                └── librustlib.d
+   ```
+2. **代码**
+   ```c
+    //main.c
+    #include <stdio.h>
+
+    extern int add(int a, int b);
+
+    int main() {
+        int result = add(3, 4);
+        printf("Result from Rust: %d\n", result);
+        return 0;
+    }
+
+    //lib.rs
+    #[unsafe(no_mangle)]
+    pub extern "C" fn add(a: i32, b: i32) -> i32 {
+        a + b
+    }
+
+    //cargo.toml
+    [package]
+    name = "rustlib"
+    version = "0.1.0"
+    edition = "2024"
+
+    [dependencies]
+
+
+    [lib]
+    name = "rustlib"
+    crate-type = ["staticlib"]
+
+    //Makefile
+    # 编译器和参数
+    CC = gcc
+    CFLAGS = -I.
+    RUST_TARGET_DIR = rustlib/target/release
+    RUST_LIB = $(RUST_TARGET_DIR)/librustlib.a
+
+    # 默认目标
+    all: build
+
+    # 构建Rust库
+    $(RUST_LIB):
+        cd rustlib && cargo build --release
+
+    # 编译并链接C程序
+    build: main.c $(RUST_LIB)
+        $(CC) main.c -o main $(RUST_LIB) -ldl -lpthread
+
+    # 清理构建文件
+    clean:
+        cd rustlib && cargo clean
+        rm -f main
+   ```
+3. **执行结果**
+   ```
+   $ make
+   gcc main.c -o main rustlib/target/release/librustlib.a -ldl -lpthread
+   $ ./main
+   Result from Rust: 7
+   ```
+#### 2.1.2 Scons
+##### SCons介绍
+SCons 是一套由 Python 语言编写的开源构建系统，用于替代传统的 Makefile。它通过 `SConstruct` 和 `SConscript` 文件来描述构建规则，支持跨平台构建，并能够自动管理文件依赖。SCons 的主要特点包括：
+1. **跨平台支持**：能够根据目标平台自动调整构建过程，支持多种工具链（如 ARM GCC、Keil MDK、IAR 等）。
+2. **自动依赖管理**：无需手动维护依赖关系，减少因依赖错误导致的构建问题。
+3. **灵活的配置**：支持通过 Python 脚本扩展功能，适合复杂的编译需求。
+4. **易读性**：基于 Python 的语法清晰易懂，比 Makefile 更易于维护。
+
+##### SCons构建Rust和C交叉编译的优势
+1. **跨平台支持**：SCons 能够自动识别目标平台并调整构建规则，适合 Rust 和 C 的交叉编译需求。
+2. **依赖管理自动化**：SCons 自动管理文件依赖，减少手动维护的复杂性，尤其在混合编译 Rust 和 C 代码时，能够避免因依赖错误导致的构建问题。
+3. **灵活的工具链配置**：SCons 支持多种工具链，可以轻松配置 Rust 和 C 的交叉编译环境。
+4. **扩展性强**：基于 Python 的脚本支持，可以轻松扩展功能，例如处理 Rust 和 C 的混合编译逻辑。
+
+>值得注意的是，RT-Thread本身采用Scons构建，因此我们可以直接采用官方的构建思路来构建改写后的操作系统，大大降低了对文件依赖关系的处理
+
+##### SCons构建RT-Thread的优势
+RT-Thread 本身采用 SCons 作为构建工具，其优势包括：
+1. **统一的构建系统**：RT-Thread 的 SCons 构建系统已经广泛应用于嵌入式开发，能够无缝支持 Rust 和 C 的交叉编译。
+2. **多平台兼容性**：RT-Thread 的 SCons 支持多种工具链（如 ARM GCC、Keil MDK 等），降低了跨平台开发的复杂性。
+
+
+##### 劣势与挑战
+1. **调试复杂性**：SCons 内部逻辑较为复杂，可能导致调试大型项目时耗时较长。
+2. **IDE支持有限**：SCons 对 IDE 的支持有限，可能需要手动配置工程文件。
+3. **生态支持不足**：SCons 的社区规模较小，扩展库较少，可能在某些场景下不如 CMake 等工具。
+
+**总结**
+> SCons 是一个强大的构建工具，尤其适合 RT-Thread 和 Rust/C 的交叉编译需求。其跨平台支持、自动依赖管理和扩展性是其主要优势，但调试复杂性和 IDE 支持不足是需要克服的挑战。
+
+##### 使用Scons生成C的静态库
+Rust调用C代码需要在编译时链接C代码生成的静态库（.a文件）,以下是使用SCons生成C的静态库的方法：
+>如何使用Cargo来调用生成的静态库，请看[使用Cargo在Rust中调用C](#)
+1. **文件结构：**
+    ```
+    .
+    ├── Cargo.toml          # Cargo的配置文件
+    ├── SConstruct          # scons构建使用的脚本，scons根据此脚本来构建项目
+    ├── build.rs            # Cargo的编译脚本
+    └── src
+        ├── clib
+        │   ├── ctools.c    # 要用来生成静态库的文件夹
+        │   └── ctools.h
+        └── main.rs         # Rust源代码，程序入口
+
+    ```
+
+2. **C代码准备：**
+    ```C
+    //ctools.h
+    #ifndef CTOOLS
+    #define CTOOLS
+
+    int add(int a, int b);
+
+    #endif
+
+    //ctools.c
+    #include "ctools.h"
+    int add(int a, int b) {
+        return a + b;
+    }
+    ```
+    **Rust代码**
+    ```Rust
+    extern crate libc;
+    use libc::c_int;
+
+    extern "C" {
+        fn add(a: c_int, b: c_int) -> c_int;
+    }
+    fn main() {
+        println!("Hello, world!");
+        let result:i32 = unsafe {
+            add(100,34)
+        };
+        println!("{}",result);
+    }
+    ```
+
+3. **Sconstruct编写**
+    ```python
+    import os   # python的os库
+    
+    # Environment()函数创建一个构建环境，这个环境对象用于定义构建规则和选项。
+    env = Environment(  
+        ENV = {
+            'PATH': os.environ['PATH'],
+            # 这条语句讲解看下方正文
+        }
+    )
+
+    # 使用replace函数可以修改一些配置的默认值，如更改编译器编译选项
+    env.Replace(
+        CFLAGS = '-fPIC -I./src/clib',
+    )
+
+    # 构建C静态库
+    c_sources = Glob('src/clib/*.c')    # 指定要编译的C文件  
+    c_objs = env.StaticObject(c_sources)    # 将C的源文件编译成.o文件
+    c_lib = env.StaticLibrary(target='libctools', source=c_objs)    # 将.o文件打包成静态库（.a文件）
+
+    # 自定义命令行命令，这里使用Cargo来编译Rust
+    rust_build = env.Command(
+        target = 'build',
+        source = None,
+        action = 'cargo build'  # 命令行的命令
+    )
+
+    # 显式指定依赖关系，执行rust_build前要编译出c_lib
+    env.Depends(rust_build, c_lib)
+
+    # 清理配置
+    Clean('.', [
+        'libctools.a',          # 生成的静态库
+        '.sconsign.dblite',     # scons的辅助文件，可以不管 
+        'Cargo.lock',           # Cargo生成的辅助文件   
+        'target'                # Cargo build命令生成的的目标文件夹
+    ])
+
+
+    # 构建帮助信息
+    Help("""
+    构建命令：
+    scons          # 构建项目
+    scons -Q       # 常规构建
+    scons -c       # 清理构建产物
+    scons --debug=explain  # 显示详细构建信息
+    """)
+    ```
+    **代码说明：**
+    1. **ENV的`PATH`变量**
+    - os.environ['PATH'] 获取系统的PATH环境变量。
+    - ENV 参数用于设置构建环境中的环境变量。
+    - 通过将系统的PATH传递给构建环境，确保构建过程中能够找到系统中的可执行文件（通常是你要用到的一些编译工具，比如Cargo）。
+    2. **Replace函数**
+    可以在此更改编译器，例如
+    ```toml
+    CC = 'arm-linux-gnueabihf-gcc'  # 更改默认的C编译器为'arm-linux-gnueabihf-gcc'
+    ```
+4. **构建信息输出**
+    ```bash
+    $ scons 
+    scons: Reading SConscript files ...
+    scons: done reading SConscript files.
+    scons: Building targets ...
+    gcc -o src/clib/ctools.o -c -fPIC -I./src/clib src/clib/ctools.c    #编译C文件
+    ar rc libctools.a src/clib/ctools.o     #打包成库
+    ranlib libctools.a
+    cargo build     #使用Cargo来编译Rust
+        Updating crates.io index
+        Locking 3 packages to latest compatible versionsmplete; 0 pending                                                                                                                   
+    Compiling shlex v1.3.0
+    Compiling libc v0.2.171
+    Compiling cc v1.2.17                    ] 0/8: libc(build.rs), shlex                                                                                                                  
+    Compiling main v0.1.0 (/home/Asukirina/RC)3/8: libc, cc                                                                                                                               
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.66s                                                                                                                  
+    scons: done building targets.
+    ```
+
+5. **运行结果**
+    ```bash
+    $ cargo run
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+        Running `target/debug/main`
+    Hello, world!
+    134
+    ```
+
+##### Scons下在C中调用rust生成的静态库
+C代码中调用Rust函数同样需要将Rust代码编译成静态库，再将静态库链接到C代码中
+>此部分只讲解如何使用SCons将Rust的静态库链接到C中，关于如何使用Cargo将Rust代码编译成静态库，请看[使用Cargo编译Rust的静态库](#)
+
+1. **代码框架**
+    ```
+    .
+    ├── Cargo.toml  # Cargo的配置文件
+    ├── Sconstruct  # Scons的编译脚本
+    └── src 
+        ├── lib.rs  # 用来生成静态库的rust代码
+        └── main.c  # 调用Rust静态库的C程序
+    ```
+
+2. **代码准备**
+    **Rust代码**
+    ```rust
+    //lib.rs
+    extern crate libc;
+    use libc::c_int;
+    #[no_mangle]    
+    pub extern "C" fn fibonacci(n: c_int) -> c_int {
+        match n {
+            0 => 0,
+            1 => 1,
+            _ => fibonacci(n - 1) + fibonacci(n - 2),
+        }
+    }
+    ```
+    >使用`#[no_mangle]`和`extern "C"`来确保函数名不会被Rust编译器修改，并且可以被C代码识别。
+
+    **C代码**
+    ```C
+    //main.c
+    #include <stdio.h>
+    extern unsigned int fibonacci(unsigned int n);
+
+    int main() {
+        int n = 10;
+        unsigned int result = fibonacci(n);
+        printf("Fibonacci(%u) = %u\n", n, result);
+        return 0;
+    }
+    ```
+
+    **Cargo.toml**
+    ```toml
+    [package]
+    name = "rustlink"
+    version = "0.1.0"
+    edition = "2021"
+
+    [lib]                       # Cargo中没指定库的原码会默认为src/librs
+    crate-type = ["staticlib"]  # 编译成静态库
+
+    [dependencies]
+    libc = "0.2"
+
+    [build-dependencies]
+    cc = "1.0"
+    ```
+
+    **Sconstruct**
+    ```python
+    import os
+
+    # 设置环境变量
+    env = Environment(
+        ENV = {
+            'PATH': os.environ['PATH'],
+        }
+    )
+
+    # 调用Cargo编译lib.rs为静态库librustlink.a,生成的静态库位于target/release中
+    Rustlink = env.Command(
+        target = 'librustlink.a',
+        source = None,
+        action = 'cargo build --release'
+    )
+
+    # 定义C程序的构建规则
+    mian = env.Program('main', 'src/main.c', LIBS=['rustlink'], LIBPATH=['./target/release'])
+
+    # 显示指定依赖关系，先构建Rustlink，再构建main
+    env.Depends(mian, Rustlink)
+
+    # 创建别名
+    env.Alias('build', mian)
+
+    # 确保Rustlink作为显式目标被构建
+    env.Alias('rustlink', Rustlink)
+
+    Clean('.', [
+        '.sconsign.dblite',
+        'target',
+        'Cargo.lock',
+    ])
+    ```
+
+3. **构建结果**
+    *命令行输出*
+    ```bash
+    $ scons build
+    scons: Reading SConscript files ...
+    scons: done reading SConscript files.
+    scons: Building targets ...
+    gcc -o src/main.o -c src/main.c
+    cargo build --release
+        Updating crates.io index
+        Locking 3 packages to latest compatible versionsmplete; 0 pending                                                                                                                   
+    Compiling libc v0.2.171
+    Compiling rustlink v0.1.0 (/home/Asukirina/Rust_to_C)                                                                                                                                 
+        Finished `release` profile [optimized] target(s) in 2.02s                                                                                                                            
+    gcc -o main src/main.o -Ltarget/release -lrustlink
+    scons: done building targets.
+    ```
+    **构建完成后的文件结构**
+    ```
+    .
+    ├── Cargo.lock
+    ├── Cargo.toml
+    ├── Sconstruct
+    ├── main        # 生成的可执行文件
+    ├── src
+    │   ├── lib.rs
+    │   ├── main.c
+    │   └── main.o
+    └── target
+        ├── CACHEDIR.TAG
+        └── release
+            ├── build
+            │   ├── libc-6cfc524b8a508b22
+            │   │   ├── invoked.timestamp
+            │   │   ├── out
+            │   │   ├── output
+            │   │   ├── root-output
+            │   │   └── stderr
+            │   └── libc-9192a796e54f7544
+            │       ├── build-script-build
+            │       ├── build_script_build-9192a796e54f7544
+            │       └── build_script_build-9192a796e54f7544.d
+            ├── deps
+            │   ├── libc-d12fd92582940488.d
+            │   ├── liblibc-d12fd92582940488.rlib
+            │   ├── liblibc-d12fd92582940488.rmeta
+            │   ├── librustlink-5a3057bc13fd054d.a
+            │   └── rustlink-5a3057bc13fd054d.d
+            ├── examples
+            ├── incremental
+            ├── librustlink.a   # 生成的静态库
+            └── librustlink.d
+    ```
+4. **执行结果**
+    ```bash
+    $ ./main
+    Fibonacci(10) = 55
+    ```
+
+#### 2.1.3 meson
+##### Meson介绍
+
+Meson是一个开源构建系统[^meson_system]，其设计目标是提供极高的构建速度和尽可能友好的用户体验。Meson采用声明式配置，避免了传统构建系统复杂的配置过程，从而减少开发者在编写或调试构建定义上所耗费的时间。此外，Meson采用Ninja作为底层构建工具，使得构建过程高效且快速，显著减少了编译启动时的等待时间。
+
+作为一个现代化的构建系统[^Wiki_Meson]，Meson具备原生的Rust支持，可以直接调用`rustc`或`Cargo`进行构建，并能自动生成Ninja构建文件。其语法简洁且类似于Python，使得开发者更易上手，同时也降低了多语言项目的集成成本。与传统的SCons、CMake等构建系统相比，Meson的构建速度更快，尤其适用于CI/CD持续集成环境。此外，Meson的轻量级特性使其在嵌入式开发场景下表现出色[^embedded]，不仅减少了系统开销，还提供了对多架构和交叉编译的良好支持[^RioTian]。
+
+在嵌入式系统开发中，构建系统的选择至关重要。Meson通过其简洁的配置方式、强大的多语言支持以及卓越的性能，成为嵌入式开发者值得考虑的方案。无论是针对资源受限的设备进行优化，还是实现高效的固件编译流程，Meson都能提供可靠的支持。
+
+##### 配置meson系统环境
+
+我选择在WSL的Ubuntu22.04系统中配置meson系统。Meson需要python环境和Ninja环境[^meson_install]，所以首先安装：
+
+```bash
+sudo apt-get install python3 python3-pip ninja-build
+pip3 install --user meson # install meson through pip
+```
+
+这里显示安装成功，如果使用`meson --version`，发现仍然检测不到meson，这里还需要继续设置环境变量：
+
+```bash
+echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+meson --version
+```
+
+到这里应该能正确输出Meson的版本，即已经正确安装Meson构建系统。下面为了测试在meson系统上联合编译Rust和C语言的可行性，我创建了一个简单的Meson项目来进行测试。首先需要安装一些必要的编译链工具和库文件，以便于支持交叉编译和运行。可以使用以下命令来安装这些工具：
+
+```bash
+snap install rustup --classic
+sudo apt-get install gcc-arm-linux-gnueabihf
+sudo apt install gcc-arm-none-eabi
+sudo apt install g++-arm-linux-gnueabihf
+rustup target add arm-unknown-linux-gnueabihf
+apt install qemu-user
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add arm-unknown-linux-gnueabihf
+```
+
+##### 创建Meson测试项目
+
+创建一个新的目录来存放Meson项目，并在该目录下创建以下文件结构：
+
+```
+├── meson.build
+├── my_cross_file.txt
+├── rust
+│   └── rust_lib.rs
+├── rustc_arm.sh
+└── src
+    └── main.c
+```
+
+这里的c语言代码文件需要一些特殊的处理，如下图所示。
+
+![C语言代码处理](img/c_test.png)
+
+Rust代码中需要声明C语言函数的接口，以便于C语言调用Rust函数。Rust函数需使用`#[no_mangle]`和`extern "C"`属性，确保函数名不被修饰并符合C调用约定，如下图所示。
+
+![](img/rust_test.png)
+
+`meson.build`是Meson构建系统的核心配置文件，定义了项目的构建规则和依赖关系。这里只需要一句简单的`project('test_cross_compilation', 'c', 'rust')`，就能够实现项目的交叉编译，这是与其它构建系统相比的巨大优势。
+
+在进行C语言和Rust语言的交叉编译时，还需要额外的配置文件和工具：
+
+- `my_cross_file.txt`是交叉编译配置文件，指定了目标平台、编译器和系统库等信息，确保 Meson 在构建时能够正确使用交叉工具链。
+- `rust_lib.rs` 是Rust语言编写的库文件，其中定义了供C语言调用的Rust函数，使用`#[no_mangle]`以保证函数符号不会被修改。
+- `src/main.c` 是C语言编写的主程序文件，负责调用Rust代码，并进行必要的数据转换。
+- `rustc_arm.sh`作为 Rust 编译器`rustc`的包装器，确保 Rust 代码能正确编译为目标架构的二进制文件。
+
+在使用Meson进行交叉编译时，首先需要使用`meson setup`指定交叉编译配置文件，例如：
+
+```
+meson setup build --cross-file my_cross_file.txt
+ninja -C build
+```
+
+这样，Meson 将自动检测并配置C和Rust的交叉编译工具链，最终生成适用于目标平台的可执行文件。
+
+```bash
+project('test_cross_compilation', 'c', 'rust')
+
+# compile Rust static library
+rust_lib = custom_target('rust_lib',
+    input: 'rust/rust_lib.rs',
+    output: 'librust_lib.a',
+    command: ['/home/courses/osh/project/rustc_arm.sh', '--crate-type=staticlib', '-o', '@OUTPUT@', '@INPUT@']
+)
+
+# compile c executable file, and link it to Rust library
+c_exe = executable('myprogram', 'src/main.c', link_with: rust_lib)
+```
+
+`rust_lib`通过`static_library`函数构建的Rust静态库，默认情况下使用Rust ABI来链接Rust和C代码。`custom_target`函数用于定义一个自定义的构建目标，这里我们指定了Rust源文件和编译命令。最后，`executable`函数用于编译C语言的可执行文件，并将Rust静态库链接到可执行文件中。但是因为Meson在处理Rust和C的缓和构建的时候，对目标类型有严格的限制，而Rust ABI的静态库只能与Rust目标链接，不能链接C目标，所以我们需要使用`custom_target`函数来创建一个自定义的构建目标，将Rust静态库编译为C语言可执行文件。
+
+接下来是交叉编译的关键步骤，需要创建一个交叉编译配置文件`my_cross_file.txt`，该文件指定了目标平台、编译器和系统库等信息。图3是我们在测试时使用的配置。
+
+![](img/cross_set.png)
+
+- **C 语言编译器**：使用`arm-linux-gnueabihf-gcc`进行C语言的交叉编译。
+- **C++ 语言编译器**：使用`arm-linux-gnueabihf-g++`进行C++代码编译。
+- **静态库管理**：`arm-linux-gnueabihf-ar`用于管理静态库。
+- **去除调试信息**：`arm-linux-gnueabihf-strip`用于精简二进制文件。
+- **Rust 交叉编译**：由于Rust交叉编译需要额外的配置，使用脚本`rustc_arm.sh`代理`rustc`。
+
+##### 目标主机架构
+
+- **system = 'linux'**：目标系统为Linux。
+- **cpu_family = 'arm'**：目标CPU架构为ARM。
+- **endian = 'little'**：采用小端存储格式。
+
+执行下面的指令可以构建这个项目并编译。这里Meson本身并不直接编译代码，而是生成构建文件并交给Ninja来完成具体工作。最后使用qume测试生成的可执行文件。
+
+```bash
+# start
+meson setup build --cross-file my_cross_file.txt
+meson compile -C build
+# test on qume
+qemu-arm -L /usr/arm-linux-gnueabihf build/myprogram
+```
+
+如下图所示，成功运行了C语言调用Rust函数的测试程序。
+
+![](img/meson_result.png)
+
+##### 可能存在的问题
+
+因为我们小组打算最后在stm32开发板上测试改写后的系统，开发板使用的是ARM Cortex-M4F处理器。以上的测试使用的是CortexA系列的处理器。同样我也进行了测试，结果发现Meson在配置阶段对Rust编译器进行健全性检查时失败，报错`can't find crate for std`，因为默认的`sanity.rs`文件依赖标准库std，而目标`thumbv7m-none-eabi`是一个bare-metal环境，不支持std库。尝试设置环境变量`MESON_RUST_SANITY_RS`指定自定义的`rust_sanity.rs`文件（包含`#![no_std]`和`panic_handler`），但发现Meson未正确使用。
+
+最终选择绕过Meson的直接Rust编译，改用Cargo构建Rust代码，避开了健全性检查问题，最后再使用Meson链接Rust的静态库和C代码。这中途还需要手动将Rust编译出的静态库文件手动复制到cargo文件夹中。测试结果如下图，因为不能使用std库，所以写了一个死循环。
+
+![](img/m4_result.png)
+
+#### 2.1.4 rttrust 工具介绍
+
+在调查过程中我们在GitHub上发现了一个名叫rttrust的开源项目[^rttrust]，可能对项目的开发有一定的帮助。rttrust是一个开源项目，旨在为rt-thread实时操作系统内核提供Rust包装。这意味着它允许我们使用Rust与rt-thread内核交互的。
+
+rttrust提供了RT-Thread API在Rust中的映射，使Rust代码能够访问线程管理、内存管理和设备驱动等功能。这些绑定不仅减少了手写FFI代码的需求，还能确保Rust代码能够正确地调用RT-Thread内核的C API。
+
+如果不使用rttrust提供的API，在Rust代码中，使用`extern "C"`关键字也可以实现调用RT-Thread的C API。例如：
+
+```rust
+extern "C" {
+    fn rt_thread_create(name: *const c_char) -> *mut c_void;
+}
+```
+
+但是rttrust已经对这些API进行了封装，使得Rust代码能够直接使用，而无需我们手动编写复杂的FFI代码。此外，rttrust确保了这些绑定与RT-Thread的多线程特性兼容，从而使Rust组件能够无缝地集成到RT-Thread的其它内核任务之中。虽然rttrust主要是为Rust代码提供RT-Thread API绑定，但它也可以帮助C代码调用Rust代码的过程。
+
+不过通过利用rttrust提供的这些功能，我们应该可以更加顺利地在RT-Thread内核中引入Rust内核组件，从而提升系统的安全性和稳定性。具体如何使用rttrust，是参考它的实现方式？还是直接使用它的API？这需要根据后续开始改写后才能决定。
+
+### 2.2 调试与验证的可行性
+
+## 3 参考文献
+[^RTThread]: [RT-Thread Documentation](https://www.rt-thread.org/document/site/#/) (Accessed: 2025-03-18)
+[^meson_install]: [Linux上Meson安装及使用meson.build-CSDN博客](https://blog.csdn.net/fanyun_01/article/details/125511554) (2022-06)
+[^Cross_compiler]: [Cross compiler](https://en.wikipedia.org/wiki/Cross_compiler) (2025-02)
+[^Wiki_Meson]: [Meson](https://en.wikipedia.org/wiki/Meson) (2025-03)
+[^meson_system]: [The Meson Build system](https://mesonbuild.com/)
+[^embedded]: [Creating a Cross-Platform Build System for Embedded Projects with Meson - Embedded Artistry](https://embeddedartistry.com/course/building-a-cross-platform-build-system-for-embedded-projects/) (2023-04)
+[^RioTian]: [Meson入门指南之一 - Riotian - 博客园](https://www.cnblogs.com/RioTian/p/17984286)
+[^comparison]: [Meson、CMake、GNU Autotools、SCons、Bazel等构建系统比较_meson cmake-CSDN博客](https://blog.csdn.net/nixnfg/article/details/122150017) (2024)
+[^rttrust]: [GitHub - tcz717/rttrust: Rust wrapper for rt-thread](https://github.com/tcz717/rttrust) (2020)
