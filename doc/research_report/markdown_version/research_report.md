@@ -146,46 +146,45 @@ Rust 之所以能够提供内存安全保障，主要得益于其独特的 所�
 
 • **Rust调用C代码**：
 
-使用`bindgen`工具自动生成RT-Thread内核API的Rust绑定（FFI）通过`extern "C"`声明保留原有C实现的模块，作为过渡阶段的兼容层。
+- 使用 `bindgen` 自动生成 RT-Thread 内核 API 的 Rust 绑定（如 `rt_thread_create → unsafe extern "C"`）
+- 案例参考：Linux 内核模块通过 `#[repr(C)]` 实现结构体对齐，已验证跨语言兼容性
 
 - **C调用Rust代码**：
 
-对Rust重构的安全抽象层（如内存分配器、智能锁），通过`cbindgen`生成C头文件，确保原有C代码（如HAL驱动）可无缝调用。
+- 对安全抽象层（如内存分配器）使用 `#[no_mangle]` 暴露接口，通过 `cbindgen` 生成 C 头文件
+- 性能优化：在中断处理函数中采用 `#[inline(always)]` 避免堆栈切换开销
 
 #### 3.3.2 开发-调试工具链
 
-- **编译环境**：
-    
-    基于PlatformIO构建多语言工程。
-    
-    [支持不同的语言和编译器 - Ideas - PlatformIO Community](https://community.platformio.org/t/support-for-different-languages-and-compilers/921)这篇文章中，Platform官方提出其可以自定义开发平台，而其底层是基于**SCons**，而SCons支持集成 Rust。
-    
-- **仿真验证**：
-    
-    **Wokwi**：配置`.wokwi.toml`模拟STM32硬件外设，实时可视化线程状态切换（如通过GPIO电平模拟调度器行为）。
-    
-- **上板验证：**
-    
-    PlatformIO可直接管理与真实设备的连接并方便上板调试运行以测试。
-    
+**编译环境**：
+基于 PlatformIO 构建多语言工程。`PlatformIO Community` 提出，PlatformIO 可以自定义开发平台来支持多语言编译[^3^]。PlatformIO 基于 **SCons**[^4^] 进行构建，而 SCons 是一个开放源码、以 Python 语言编码的自动化构建工具，支持集成 Rust[^5^]。
+
+**仿真环境**：
+**Wokwi**：Wokwi 可通过配置 `wokwi.toml` 与 `diagram.json` 来模拟多种开发板与外设，方便调试与验证。[^6^]
+
+**调试与验证**：
+PlatformIO 可直接管理与真实设备的连接，并方便上板调试运行以测试。
+- 首阶段部署至 STM32F103C8T6 等多型号开发板（我们团队成员至少有 4 块不同型号的开发板），验证内核基本功能
+- 性能对比：与原版 C 内核进行基准测试（CoreMark 得分、任务切换耗时）
 
 #### 3.3.3 原项目
 
-- RTThread完全开源，且拥有丰富完整的文档以及相关生态。
+- **代码可移植性**：RT-Thread Nano 内核代码量约 1.2 万行，模块化设计清晰（如 `kservice.c` 独立于硬件抽象层）[^7^]
+- **社区支持**：已有 Rust 嵌入式社区[^8^][^9^]，它们提供了丰富的文档、示例代码和技术支持，避免重复造轮子
 
 ### 3.4 关键点
 
-- Rust+C编译环境的搭建
-- RT-thread Nano的内核结构与具体实现
-- Rust改写
+- Rust + C 编译环境的搭建
+- RT-Thread Nano 的内核结构与具体实现
+- Rust 改写
 - 改写成果的调试验证与优化
 
 ### 3.5 预期目标
 
-- **内存安全**：通过所有权模型和借用检查，消除CWE-119（缓冲区溢出）、CWE-416（释放后使用）等漏洞
-- **并发安全**：Rust的`Send`/`Sync` Trait静态验证数据竞争，结合`Mutex<RefCell<T>>`智能锁，降低调度器数据竞争发生率
-- **性能优化：**尝试优化该系统的性能，如实时性等
-- **精简代码：**利用Rust的优质特性精简代码
+- **内存安全**：通过所有权模型和借用检查，消除 CWE-119（缓冲区溢出）、CWE-416（释放后使用）等漏洞。
+- **并发安全**：Rust 的 `Send`/`Sync` Trait 静态验证数据竞争，结合 `Mutex<RefCell<T>>` 智能锁，降低调度器数据竞争发生率。
+- **性能优化**：尝试优化该系统的性能，如实时性等。
+- **精简代码**：利用 Rust 的优质特性精简代码。
 
 ## 4 重要性与前瞻性分析
 
