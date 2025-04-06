@@ -57,6 +57,10 @@
       - [rt-thread 启动流程与移植目录结构分析](#rt-thread-启动流程与移植目录结构分析)
       - [PlatformIO平台简介以及编译流程分析](#platformio平台简介以及编译流程分析)
       - [上板运行——基于CubeMX+PlatformIO+rt-thread的部署方法](#上板运行基于cubemxplatformiort-thread的部署方法)
+      - [模拟器验证方案](#模拟器验证方案)
+        - [QEMU简介](#qemu简介)
+        - [模拟](#模拟)
+        - [调试](#调试)
   - [3 参考文献](#3-参考文献)
 
 ## 1 理论依据
@@ -1541,6 +1545,99 @@ int main(void) {
 ```
 运行视频见下
 [run.mp4](./img/run.mp4)
+
+#### 模拟器验证方案
+
+除了上板验证，我们还可以使用模拟器来验证我们的代码。我们选择了QEMU作为模拟器
+
+##### QEMU简介
+
+QEMU（Quick EMUlator）是一个开源的模拟器，用于模拟多种计算机硬件平台。它支持多种架构，包括但不限于x86、ARM、MIPS、SPARC等。QEMU可以模拟整个计算机系统，包括处理器、内存、外设等，也可以仅模拟处理器（用户模式）。
+
+QEMU可以模拟各种嵌入式硬件平台，如ARM Cortex-M系列处理器。我们可以在模拟环境中进行对内核进行开发和测试。并且通过模拟硬件，开发者可以在早期阶段验证代码的正确性，减少硬件依赖，加快开发周期。
+
+而QEMU支持与GDB（GNU Debugger）集成，提供强大的调试功能。开发者可以通过GDB连接到QEMU，进行单步调试、断点设置、变量检查等操作。QEMU还支持半主机（semihosting）模式，允许嵌入式程序与宿主机进行交互，例如通过宿主机的文件系统或控制台进行输入输出。更加方便了我们对内核的构建与调试。
+
+##### 模拟
+
+使用以下命令启动QEMU模拟器：
+
+```bash
+qemu-system-arm \
+  -cpu cortex-m3 \
+  -machine lm3s6965evb \
+  -nographic \
+  -semihosting-config enable=on,target=native \
+  -kernel target/xxxxxx
+```
+
+控制台输出simhosting信息，表示QEMU已启用半主机模式。我们可以在代码中使用`printf`或`rt_kprintf`等函数进行输出。
+
+示例：
+
+```rust
+#![no_std]
+#![no_main]
+
+use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
+
+use cortex_m::asm;
+use cortex_m_rt::entry;
+use cortex_m_semihosting::{debug, hprintln};
+
+#[entry]
+fn main() -> ! {
+
+    loop {
+        // your code goes here
+        hprintln!("Hello, world!");
+    }
+}
+```
+
+控制台输出如下：
+
+```bash
+Hello, world!
+```
+
+![Hello](./img/Hellos.png)
+
+这表明我们成功地在QEMU上运行了一个简单的嵌入式程序。
+
+##### 调试
+
+如果说单纯的simhosting输出还不够方便，我们还可以使用GDB进行调试。QEMU支持与GDB集成，允许我们在模拟器中进行单步调试、断点设置、变量检查等操作。
+
+通过以下命令启动GDB调试：
+
+```bash
+qemu-system-arm \
+  -cpu cortex-m3 \
+  -machine lm3s6965evb \
+  -nographic \
+  -semihosting-config enable=on,target=native \
+  -gdb tcp::3333 \
+  -S \
+  -kernel target/xxxxxx
+
+```
+
+借助`gdb-multiarch` / `gbd` /`arm-none-eabi-gdb`调试。示例：`gdb-multiarch target/xxxxx`
+
+VScode有调试插件可以配置。通过`Cortex-Debug`插件配置调试环境，可简化调试流程。
+
+> 可以在`.cargo/config`中配置一个自定义的运行指令来减化指令
+> 
+> 
+> ```bash
+> [target.thumbv7m-none-eabi]
+> # uncomment this to make `cargo run` execute programs on QEMU
+> runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semihosting-config enable=on,target=native -kernel"
+> ```
+> 
+> 就可以用`cargo run`运行了
+>
 
 ## 3 参考文献
 [^RTThread]: [RT-Thread Documentation](https://www.rt-thread.org/document/site/#/) (Accessed: 2025-03-18)
