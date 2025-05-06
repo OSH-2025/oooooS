@@ -5,6 +5,9 @@ edition = "2024"
 
 build = "build.rs"
 
+[build-dependencies]
+cc = "1.0"
+
 [dependencies]
 cortex-m = "0.5.8"        # cortex-m 核心指令集
 cortex-m-semihosting = "0.5"  # 运行时与宿主机交互
