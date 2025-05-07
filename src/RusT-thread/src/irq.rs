@@ -1,4 +1,5 @@
-use super::rtdef;
+use super::rthw;
+use super::rtthread;
 
 // 保持原有的宏定义
 #[cfg(feature = "hook")]
