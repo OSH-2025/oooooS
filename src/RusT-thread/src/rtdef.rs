@@ -2,8 +2,8 @@
 //! This module contains the basic type definitions and core structures for RT-Thread
 
 use core::ffi::c_void;
-use core::marker::PhantomData;
 use core::ptr;
+use crate::rtconfig;
 
 /// Basic type definitions
 pub type rt_int8_t = i8;

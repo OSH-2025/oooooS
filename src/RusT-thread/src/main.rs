@@ -15,6 +15,8 @@ use cortex_m_semihosting::{debug, hprintln};
 mod rtdef;
 mod irq;
 mod mem;
+mod rtconfig;
+mod rtthread;
 #[entry]
 fn main() -> ! {
     // asm::nop(); // To not have main optimize to abort in release mode, remove when you add code
