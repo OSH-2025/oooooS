@@ -12,6 +12,8 @@ use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
+
+mod kservice;
 mod rtdef;
 mod irq;
 mod mem;

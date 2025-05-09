@@ -1,5 +1,6 @@
 use crate::rtconfig;
 
+
 pub struct RtThread {
     /// object
     pub name: [u8; rtconfig::RT_NAME_MAX as usize],
@@ -7,16 +8,7 @@ pub struct RtThread {
     pub flags: u8,
 
     /// list 
-    // todo: 需要一个链表，来装载线程
-    /**
-     * pub thread_list: rt_list,
-     */
-
-    /// stack
-    /// todo: 需要一个栈，来装载线程
-    /**
-     * pub thread_stack: rt_stack,
-     */
+    /// 不需要，在scheduler中维护Vec管理
     
     /// error
     pub error: isize,

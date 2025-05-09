@@ -3,7 +3,7 @@
 /// 1. ...
 /// 
 /// 
-/// 我找到了一些可用的global_allocator
+/// 我(@luohaomin)找到了一些可用的global_allocator
 /// 1. good_memory_allocator
 /// 2. buddy_system_allocator
 /// 3. linked_list_allocator

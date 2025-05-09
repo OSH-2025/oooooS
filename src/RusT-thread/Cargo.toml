@@ -28,6 +28,8 @@ debug = true # symbols are nice and they don't increase the size on Flash
 lto = true # better optimizations
 
 [features]
-default = ["buddy_system_allocator"]
+default = ["buddy_system_allocator", "tiny_ffs"]
 good_memory_allocator = ["dep:good_memory_allocator"]
 buddy_system_allocator = ["dep:buddy_system_allocator"]
+tiny_ffs = []
+full_ffs = []
