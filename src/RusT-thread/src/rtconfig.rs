@@ -1,7 +1,7 @@
-pub const RT_THREAD_PRIORITY_MAX: u8 = 32;
+pub const RT_THREAD_PRIORITY_MAX: usize = 32;
 pub const RT_TICK_PER_SECOND: u32 = 1000;
 pub const RT_ALIGN_SIZE: u32 = 4;
-pub const RT_NAME_MAX: u32 = 8;
+pub const RT_NAME_MAX: usize = 8;
 pub const RT_USING_COMPONENTS_INIT: bool = true;
 pub const RT_USING_USER_MAIN: bool = true;
 pub const RT_MAIN_THREAD_STACK_SIZE: u32 = 256;
