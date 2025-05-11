@@ -36,12 +36,16 @@ fn main() {
     // `--nmagic` is required if memory section addresses are not aligned to 0x10000,
     // for example the FLASH and RAM sections in your `memory.x`.
     // See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
-    println!("cargo:rustc-link-arg=--nmagic");
+    println!("cargo:rustc-link-arg=-Wl,--nmagic");
 
     // Set the linker script to the one provided by cortex-m-rt.
-    println!("cargo:rustc-link-arg=-Tlink.x");
+    // println!("cargo:rustc-link-arg=-Wl,-Tlink.x");
     
     cc::Build::new()
         .file("src/cortex-m4/context_gcc.S")
+        .flag("-mcpu=cortex-m4")
+        .flag("-mthumb")
+        .flag("-mfpu=fpv4-sp-d16")
+        .flag("-mfloat-abi=hard")
         .compile("context_gcc");
 }
