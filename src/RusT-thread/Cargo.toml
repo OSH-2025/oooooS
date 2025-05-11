@@ -36,3 +36,4 @@ buddy_system_allocator = ["dep:buddy_system_allocator"]
 tiny_ffs = []
 full_ffs = []
 hook = []
+mem_trace = [] # 内存跟踪功能，用于调试与分析
