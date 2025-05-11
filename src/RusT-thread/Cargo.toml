@@ -33,6 +33,4 @@ good_memory_allocator = ["dep:good_memory_allocator"]
 buddy_system_allocator = ["dep:buddy_system_allocator"]
 tiny_ffs = []
 full_ffs = []
-
-[features]
 hook = []
