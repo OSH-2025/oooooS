@@ -12,13 +12,16 @@ use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use cortex_m_semihosting::{debug, hprintln};
-
-mod kservice;
 mod rtdef;
-mod irq;
+// mod cpuport;
+// mod irq;
+// mod rthw;
+mod rtthread;
+mod kservice;
 mod mem;
 mod rtconfig;
-mod rtthread;
+
+
 #[entry]
 fn main() -> ! {
     // asm::nop(); // To not have main optimize to abort in release mode, remove when you add code
@@ -27,6 +30,18 @@ fn main() -> ! {
         // your code goes here
         hprintln!("Hello, world!");
     // }
+
+    // fn test_hook() {
+    //     hprintln!("test hook");
+    // }
+
+    // irq::rt_interrupt_enter();
+    // irq::rt_interrupt_leave();
+    // irq::rt_interrupt_enter_sethook(test_hook);
+    // irq::rt_interrupt_enter();
+    // irq::rt_interrupt_leave();
+
+    
     loop {
         asm::nop();
     }
