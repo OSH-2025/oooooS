@@ -24,12 +24,12 @@ mod rtconfig;
 
 #[entry]
 fn main() -> ! {
-    // asm::nop(); // To not have main optimize to abort in release mode, remove when you add code
 
-    // loop {
-        // your code goes here
-        hprintln!("Hello, world!");
-    // }
+    hprintln!("Hello, world!");
+
+    loop {
+        asm::nop();
+    }    
 
     // fn test_hook() {
     //     hprintln!("test hook");
@@ -40,9 +40,4 @@ fn main() -> ! {
     // irq::rt_interrupt_enter_sethook(test_hook);
     // irq::rt_interrupt_enter();
     // irq::rt_interrupt_leave();
-
-    
-    loop {
-        asm::nop();
-    }
 }

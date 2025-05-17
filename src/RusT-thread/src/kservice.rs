@@ -16,109 +16,70 @@
 /// *data += 1;
 /// DATA.unlock();
 
-use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::cell::{RefCell, RefMut, UnsafeCell};
+use core::ops::{Deref, DerefMut};
+use lazy_static::*;
 
-pub struct SpinLock<T> {
-    locked: AtomicBool,
-    data: UnsafeCell<T>,
+
+
+/// 中断安全的FreeCell
+/// 
+/// 用于保护共享资源
+/// 
+/// 使用示例
+/// 
+/// static DATA: RTIntrFreeCell<u32> = RTIntrFreeCell::new(0);
+/// 
+/// 安全地访问和修改
+/// let mut data = DATA.exclusive_access();
+/// *data += 1;
+/// 
+pub struct RTIntrFreeCell<T> {
+    /// inner data
+    inner: RefCell<T>,
 }
 
-impl<T> SpinLock<T> {
-    pub const fn new(data: T) -> Self {
+unsafe impl<T> Sync for RTIntrFreeCell<T> {}
+
+pub struct RTIntrRefMut<'a, T>(Option<RefMut<'a, T>>);
+
+impl<T> RTIntrFreeCell<T> {
+    pub unsafe fn new(value: T) -> Self {
         Self {
-            locked: AtomicBool::new(false),
-            data: UnsafeCell::new(data),
+            inner: RefCell::new(value),
         }
     }
 
-    pub fn lock(&self) -> &mut T {
-        while self.locked.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-            // 自旋等待
-        }
-        unsafe { &mut *self.data.get() }
+    /// Panic if the data has been borrowed.
+    pub fn exclusive_access(&self) -> RTIntrRefMut<'_, T> {
+        // TODO：Interrupt_disable
+        RTIntrRefMut(Some(self.inner.borrow_mut()))
     }
 
-    pub fn unlock(&self) {
-        self.locked.store(false, Ordering::Release);
+    pub fn exclusive_session<F, V>(&self, f: F) -> V
+    where
+        F: FnOnce(&mut T) -> V,
+    {
+        let mut inner = self.exclusive_access();
+        f(inner.deref_mut())
     }
 }
 
-/// ffs
-///
-/// 查找最低位设置的实现
-
-#[cfg(feature = "tiny_ffs")]
-const __LOWEST_BIT_BITMAP: [u8; 37] = [
-    /*  0 - 7  */  0,  1,  2, 27,  3, 24, 28, 32,
-    /*  8 - 15 */  4, 17, 25, 31, 29, 12, 32, 14,
-    /* 16 - 23 */  5,  8, 18, 32, 26, 23, 32, 16,
-    /* 24 - 31 */ 30, 11, 13,  7, 32, 22, 15, 10,
-    /* 32 - 36 */  6, 21,  9, 20, 19
-];
-
-/**
- * This function finds the first bit set (beginning with the least significant bit)
- * in value and return the index of that bit.
- *
- * Bits are numbered starting at 1 (the least significant bit).  A return value of
- * zero from any of these functions means that the argument was zero.
- *
- * @return return the index of the first bit set. If value is 0, then this function
- * shall return 0.
- */
-#[cfg(feature = "tiny_ffs")]
-pub fn __rt_ffs(value: u32) -> u8 {
-    return __LOWEST_BIT_BITMAP[((value & (value - 1) ^ value) % 37) as usize];
+impl<'a, T> Drop for RTIntrRefMut<'a, T> {
+    fn drop(&mut self) {
+        self.0 = None;
+        // TODO：Interrupt_enable
+    }
 }
 
-#[cfg(feature = "full_ffs")]
-const __LOWEST_BIT_BITMAP: [u8; 256] = [
-    /* 00 */ 0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 10 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 20 */ 5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 30 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 40 */ 6, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 50 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 60 */ 5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 70 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 80 */ 7, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* 90 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* A0 */ 5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* B0 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* C0 */ 6, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* D0 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* E0 */ 5, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
-    /* F0 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0
-];
-
-/**
- * This function finds the first bit set (beginning with the least significant bit)
- * in value and return the index of that bit.
- *
- * Bits are numbered starting at 1 (the least significant bit).  A return value of
- * zero from any of these functions means that the argument was zero.
- *
- * @return Return the index of the first bit set. If value is 0, then this function
- *         shall return 0.
- */
-#[cfg(feature = "full_ffs")]
-pub fn __rt_ffs(value: u32) -> u8 {
-    if value == 0 {
-        return 0;
+impl<'a, T> Deref for RTIntrRefMut<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap().deref()
     }
-
-    if (value & 0xff) != 0 {
-        return __LOWEST_BIT_BITMAP[value & 0xff] + 1;
+}
+impl<'a, T> DerefMut for RTIntrRefMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().unwrap().deref_mut()
     }
-
-    if (value & 0xff00) != 0 {
-        return __LOWEST_BIT_BITMAP[(value & 0xff00) >> 8] + 9;
-    }
-
-    if (value & 0xff0000) != 0 {
-        return __LOWEST_BIT_BITMAP[(value & 0xff0000) >> 16] + 17;
-    }
-
-    return __LOWEST_BIT_BITMAP[(value & 0xff000000) >> 24] + 25;
 }

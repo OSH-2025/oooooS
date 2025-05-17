@@ -4,6 +4,14 @@
 use core::ffi::c_void;
 use core::ptr;
 use crate::rtconfig;
+extern crate alloc;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use heapless::pool::object::Object;
+use lazy_static::lazy_static;
+use spin::Mutex;
+
+
 
 /// Basic type definitions
 #[deprecated(since = "0.1.0", note = "Use native types i8 instead")]
@@ -129,7 +137,42 @@ pub const RT_IPC_CMD_RESET: u8 = 0x01;
 pub const RT_WAITING_FOREVER: i32 = -1;
 pub const RT_WAITING_NO: i32 = 0;
 
+
+
 /// Thread priority
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ThreadPriority(pub u8);
 
+
+lazy_static! {
+    static ref RT_OBJECT_LIST: Mutex<Vec<&'static RtObject>> = Mutex::new(Vec::new());
+}
+
+
+
+struct RtObject {
+    /// 用来储存对象的名称的数组
+    pub name: [u8; rtconfig::RT_NAME_MAX],
+    /// 对象的类型
+    pub obj_type: u8,
+    /// 对象的标志状态
+    pub flag: u8,
+}
+
+impl RtObject {
+    /// 创建一个新的RtObject实例
+    pub fn new(name: &str, obj_type: u8, flag: u8) -> &'static Self {
+        let mut name_buf = [0u8; rtconfig::RT_NAME_MAX];
+        let name_bytes = name.as_bytes();
+        let len = name_bytes.len().min(rtconfig::RT_NAME_MAX);
+        name_buf[..len].copy_from_slice(&name_bytes[..len]);
+        let obj = Box::leak(Box::new(Self {
+            name: name_buf,
+            obj_type,
+            flag,
+        }));
+        RT_OBJECT_LIST.lock().push(obj);
+        obj
+    }
+    
+}
