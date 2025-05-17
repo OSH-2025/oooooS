@@ -31,8 +31,6 @@ fn main() -> ! {
     loop {
         asm::nop();
     }    
-mod rtthread;
-
 
 /*
 // // 定义一个测试用的堆内存区域
