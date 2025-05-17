@@ -73,6 +73,9 @@ pub const RT_UINT16_MAX: u16 = u16::MAX;
 pub const RT_UINT32_MAX: u32 = u32::MAX;
 pub const RT_TICK_MAX: u32 = RT_UINT32_MAX;
 
+/// Alignment size
+pub const RT_ALIGN_SIZE: u32 = rtconfig::RT_ALIGN_SIZE;
+
 /// IPC type maximum values
 pub const RT_SEM_VALUE_MAX: u16 = RT_UINT16_MAX;
 pub const RT_MUTEX_VALUE_MAX: u16 = RT_UINT16_MAX;
