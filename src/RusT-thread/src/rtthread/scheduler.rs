@@ -4,6 +4,174 @@ extern crate alloc;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use crate::kservice::RTIntrFreeCell;
+use crate::rtconfig;
+use alloc::vec::Vec;
+use crate::rtdef::ThreadState;
+
+// 静态变量：一个单例
+lazy_static! {
+    /// 调度器
+    static ref RT_SCHEDULER: RTIntrFreeCell<Scheduler> = unsafe { RTIntrFreeCell::new(Scheduler::new()) };
+    /// 就绪优先级表
+    static ref RT_THREAD_PRIORITY_TABLE: RTIntrFreeCell<ThreadPriorityTable> = unsafe { 
+        RTIntrFreeCell::new(ThreadPriorityTable::new()) 
+    };
+}
+
+/// 线程优先级表
+struct ThreadPriorityTable {
+    table: [VecDeque<Arc<RtThread>>; rtconfig::RT_THREAD_PRIORITY_MAX],
+    #[cfg(feature = "full_ffs")]
+    ready_table: [u8; 32],
+    ready_priority_group: u32,
+}
+
+impl ThreadPriorityTable {
+    /// 创建一个线程优先级表
+    fn new() -> Self {
+        let mut table = Vec::with_capacity(rtconfig::RT_THREAD_PRIORITY_MAX);
+        for _ in 0..rtconfig::RT_THREAD_PRIORITY_MAX {
+            table.push(VecDeque::new());
+        }
+        Self {
+            table: table.try_into().unwrap(),
+            #[cfg(feature = "full_ffs")]
+            ready_table: [0; 32],
+            ready_priority_group: 0,
+        }
+    }
+    /// 获取优先级表中优先级为priority的线程
+    pub fn get_thread(&self, priority: u8) -> Option<Arc<RtThread>> {
+        self.table[priority as usize].front().cloned()
+    }
+    /// 获取优先级表中thread的索引
+    pub fn get_thread_index(&self, thread: Arc<RtThread>) -> Option<usize> {
+        self.table.iter().enumerate().find_map(|(i, queue)| {
+            if queue.contains(&thread) {
+                Some(i)
+            } else {
+                None
+            }
+        })
+    }
+    /// 从优先级表中移除优先级为priority的线程
+    pub fn pop_thread(&mut self, priority: u8) -> Option<Arc<RtThread>> {
+        // 若优先级表为空，则返回None
+        if self.table[priority as usize].is_empty() {
+            return None;
+        }
+        // 若优先级表只剩一个线程，需更新就绪优先级组
+        if self.table[priority as usize].len() == 1 {
+            self.tag_off_priority(priority);
+        }
+        self.table[priority as usize].pop_front()
+    }
+
+    pub fn remove_thread(&mut self, priority: u8, index: usize) {
+        self.table[priority as usize].remove(index);
+        // 若优先级表为空，需更新就绪优先级组
+        if self.table[priority as usize].is_empty() {
+            self.tag_off_priority(priority);
+        }
+    }
+
+    #[cfg(feature = "full_ffs")]
+    pub fn get_highest_priority(&self) -> u8 {
+        let number = __rt_ffs(self.ready_priority_group) - 1;
+        (number << 3) + __rt_ffs(self.ready_table[number as usize])
+    }
+
+    #[cfg(feature = "tiny_ffs")]
+    pub fn get_highest_priority(&self) -> u8 {
+        __rt_ffs(self.ready_priority_group) - 1
+    }
+    /// 去除priority在ready_priority_group中的标记
+    #[cfg(feature = "full_ffs")]
+    fn tag_off_priority(&self, priority: u8) {
+        todo!();
+    }
+    /// 设置priority在ready_priority_group中的标记
+    #[cfg(feature = "full_ffs")]
+    fn tag_on_priority(&self, priority: u8) {
+        todo!();
+    }
+
+    /// 去除priority在ready_priority_group中的标记
+    #[cfg(feature = "tiny_ffs")]
+    fn tag_off_priority(&self, priority: u8) {
+        todo!();
+    }
+    /// 设置priority在ready_priority_group中的标记
+    #[cfg(feature = "tiny_ffs")]
+    fn tag_on_priority(&self, priority: u8) {
+        todo!();
+    }
+}
+
+/// 调度器
+struct Scheduler {
+    /// 当前线程
+    current_thread: Option<Arc<RtThread>>,
+    /// 当前优先级
+    current_priority: u8,
+    /// 锁嵌套计数
+    lock_nest: u8,
+}
+
+impl Scheduler {
+    pub fn new() -> Self {
+        Self {
+            current_thread: None,
+            current_priority: 0,
+            lock_nest: 0,
+        }
+    }
+    /// 切换到线程
+    fn switch_to_thread(&mut self, thread: Option<Arc<RtThread>>) {
+        todo!()
+    }
+   
+
+    pub fn start(&mut self) {
+
+        // 获取最高优先级
+        self.current_priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
+        // 获取最高优先级的线程
+        self.current_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(self.current_priority);
+        
+        if self.current_thread.is_some() {
+            // 设置线程状态为运行
+            self.current_thread.as_ref().unwrap().inner.exclusive_access().stat = ThreadState::Running;
+        }
+
+        // 切换到最高优先级的线程
+        self.switch_to_thread(self.current_thread.clone());
+    }
+    /// 调度
+    pub fn schedule(&mut self) {
+        // 关中断
+        todo!("关中断");
+
+        // 检查锁嵌套计数
+        if self.lock_nest > 0 {
+            return;
+        }
+        
+
+
+
+        // 开中断
+        todo!("开中断");
+    }
+
+    pub fn lock(&mut self) {
+        self.lock_nest += 1;
+    }
+
+    pub fn unlock(&mut self) {
+        self.lock_nest -= 1;
+    }
+}
 
 /// ffs
 ///
@@ -29,6 +197,7 @@ const __LOWEST_BIT_BITMAP: [u8; 37] = [
  * shall return 0.
  */
 #[cfg(feature = "tiny_ffs")]
+/// 查找最低位设置的实现
 pub fn __rt_ffs(value: u32) -> u8 {
     return __LOWEST_BIT_BITMAP[((value & (value - 1) ^ value) % 37) as usize];
 }
@@ -83,29 +252,4 @@ pub fn __rt_ffs(value: u32) -> u8 {
 
     return __LOWEST_BIT_BITMAP[(value & 0xff000000) >> 24] + 25;
 }
-
-// 静态变量：一个单例
-lazy_static! {
-    static ref RT_SCHEDULER: RTIntrFreeCell<Scheduler> = unsafe { RTIntrFreeCell::new(Scheduler::new()) };
-}
-
-/// 调度器
-struct Scheduler {
-    ready_queue: VecDeque<Arc<RtThread>>,
-
-}
-
-impl Scheduler {
-   pub fn new() -> Self {
-    Self {
-        ready_queue: VecDeque::new(),
-    }
-   }
-   
-   
-}
-
-
-
-
 

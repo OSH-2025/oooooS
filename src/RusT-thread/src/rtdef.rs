@@ -91,6 +91,7 @@ pub const RT_THREAD_RUNNING: u8 = 0x03;
 pub const RT_THREAD_CLOSE: u8 = 0x04;
 pub const RT_THREAD_STAT_MASK: u8 = 0x07;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum ThreadState {
     Init,
     Ready,

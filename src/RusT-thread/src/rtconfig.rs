@@ -1,10 +1,25 @@
+/// 最大优先级
 pub const RT_THREAD_PRIORITY_MAX: usize = 32;
+
+/// 时钟频率
 pub const RT_TICK_PER_SECOND: u32 = 1000;
+
+/// 对齐大小
 pub const RT_ALIGN_SIZE: u32 = 4;
+
+/// 最大名称长度
 pub const RT_NAME_MAX: usize = 8;
+
+/// 使用组件初始化
 pub const RT_USING_COMPONENTS_INIT: bool = true;
+
+/// 使用用户主函数
 pub const RT_USING_USER_MAIN: bool = true;
+
+/// 主函数堆栈大小
 pub const RT_MAIN_THREAD_STACK_SIZE: u32 = 256;
+
+/// 调试
 pub const RT_DEBUG: bool = false;
 pub const RT_DEBUG_INIT: u32 = 0;
 pub const RT_USING_OVERFLOW_CHECK: bool = false;
