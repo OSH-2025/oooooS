@@ -150,20 +150,85 @@ impl Scheduler {
     /// 调度
     pub fn schedule(&mut self) {
         // 关中断
-        todo!("关中断");
+        todo!("schedule: 关中断");
 
         // 检查锁嵌套计数
         if self.lock_nest > 0 {
+            todo!("schedule: 开中断");
             return;
         }
 
         // 获取最高优先级
         let priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
         // 获取最高优先级的线程
-        let thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(priority);
+        let to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(priority);
+
+        if to_thread.is_some() {
+            // 是否需要将原线程重新插入就绪队列
+            let mut need_insert_from_thread = false;
+            // 获取最高优先级的线程
+            let to_thread = to_thread.unwrap();
+
+            // 检查当前线程状态
+            if let Some(current_thread) = &self.current_thread {
+                let current_stat = current_thread.inner.exclusive_access().stat;
+                // 当前线程状态为运行
+                if current_stat == ThreadState::Running {
+                    // 获取当前线程优先级
+                    let current_priority = current_thread.inner.exclusive_access().current_priority;
+                    // 当前线程优先级小于新线程优先级
+                    if current_priority < priority {
+                        // 当前线程优先级更高，继续运行当前线程
+                        need_insert_from_thread = false;
+                    } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
+                        // 优先级相同且未让出CPU，继续运行当前线程
+                        need_insert_from_thread = false;
+                    } else {
+                        // 需要切换到新线程
+                        need_insert_from_thread = true;
+                    }
+                    // 清除让出标志
+                    current_thread.inner.exclusive_access().stat.clear_yield();
+                }
+            }
+
+            if to_thread != self.current_thread.unwrap() {
+                // 需要切换线程
+                self.current_priority = priority;
+                let from_thread = self.current_thread.take();
+                self.current_thread = Some(to_thread.clone());
+
+                if need_insert_from_thread {
+                    if let Some(from) = &from_thread {
+                        // 将原线程重新插入就绪队列
+                        RT_THREAD_PRIORITY_TABLE.exclusive_access().table[from.inner.exclusive_access().current_priority as usize]
+                            .push_back(from.clone());
+                    }
+                }
+
+                // 设置新线程状态为运行
+                to_thread.inner.exclusive_access().stat = ThreadState::Running;
+
+                // 执行线程切换
+                todo!("schedule: 执行线程切换");
+                // if crate::kservice::interrupt::get_nest() == 0 {
+                //     // 在非中断环境下切换
+                //     self.switch_to_thread(from_thread);
+                //     // 开中断
+                //     todo!("schedule: 开中断");
+                //     return;
+                // } else {
+                //     // 在中断环境下切换
+                //     self.switch_to_thread(from_thread);
+                // }
+            } else {
+                // 不需要切换线程，但需要更新状态
+                to_thread.inner.exclusive_access().stat = ThreadState::Running;
+            }
+        }
 
         // 开中断
-        todo!("开中断");
+        todo!("schedule: 开中断");
     }
 
     pub fn lock(&mut self) {
