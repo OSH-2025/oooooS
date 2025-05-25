@@ -34,7 +34,10 @@ pub struct RtThreadInner {
     pub remaining_tick: usize,
 
     /// context
-    pub context: RtContext,
+    pub stack_size: usize,
+    pub stack_addr: usize,
+    pub sp: usize,
+    pub context: Vec<RtContext>,
 
     /// user data
     pub user_data: usize,
@@ -50,7 +53,7 @@ pub struct RtThread {
     /// inner mutable state
     pub inner: RTIntrFreeCell<RtThreadInner>,
     
-    pub cleanup: fn(*mut RtThread),
+    pub cleanup: Option<fn(*mut RtThread)>,
 }
 
 // 实现partial_eq
@@ -74,13 +77,9 @@ impl Debug for RtThread {
 
 
 impl RtThread {
-    // pub fn new(name: &str, entry: Box<dyn FnOnce() + Send + Sync + 'static>) -> Self {
-    //     let thread = RtThread {
-    //         name: name.as_bytes().try_into().unwrap(),
-    //         object_type: RT_Object_Class_Thread as u8,
+    //todo: 线程创建、线程添加、线程删除、线程启动、线程挂起、线程恢复、线程等待、线程唤醒、线程退出、线程调度、线程优先级、线程栈
 
 }
-
 /// 上下文，用于线程切换
 #[derive(Debug)]
 pub struct RtContext{
@@ -89,3 +88,47 @@ pub struct RtContext{
     s: [usize; 12],
 }
 
+impl RtContext {
+    pub fn new() -> Self {
+        RtContext {
+            ra: 0,
+            sp: 0,
+            s: [0; 12],
+        }
+    }
+}
+
+
+/// 创建线程
+/// @param name 线程名称
+/// @param entry 线程入口函数
+/// @param stack_size 线程栈大小
+/// @param priority 线程优先级
+/// @param tick 线程时间片
+/// @return 线程对象
+pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: Box<dyn FnOnce() + Send + Sync + 'static>, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
+    let thread = RtThread {
+        name,
+        object_type: 0,
+        inner: unsafe {
+            RTIntrFreeCell::new(RtThreadInner {
+            error: 0,
+            stat: ThreadState::Ready,
+            current_priority: priority,
+            number_mask: 0,
+            entry,
+            init_tick: tick,
+            remaining_tick: tick,
+            stack_size,
+            stack_addr: 0,
+            sp: 0,
+            context: Vec::new(),
+            user_data: 0,
+            })
+        },
+        cleanup: None,
+    };
+    let thread_arc = Arc::new(thread);
+    RT_THREAD_LIST.exclusive_access().push(thread_arc.clone());
+    thread_arc
+}
