@@ -46,7 +46,6 @@ pub struct RtThread {
     /// object
     pub name: [u8; rtconfig::RT_NAME_MAX],
     pub object_type: u8,
-    pub flags: u8,
     
     /// inner mutable state
     pub inner: RTIntrFreeCell<RtThreadInner>,
@@ -58,7 +57,7 @@ pub struct RtThread {
 impl PartialEq for RtThread {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-        && self.flags == other.flags
+        && self.object_type == other.object_type
     }
 }
 
@@ -67,11 +66,19 @@ impl Debug for RtThread {
         f.debug_struct("RtThread")
             .field("name", &self.name)
             .field("object_type", &self.object_type)
-            .field("flags", &self.flags)
             .field("inner", &"<RTIntrFreeCell<RtThreadInner>>")
             .field("cleanup", &"<function>")
             .finish()
     }
+}
+
+
+impl RtThread {
+    // pub fn new(name: &str, entry: Box<dyn FnOnce() + Send + Sync + 'static>) -> Self {
+    //     let thread = RtThread {
+    //         name: name.as_bytes().try_into().unwrap(),
+    //         object_type: RT_Object_Class_Thread as u8,
+
 }
 
 /// 上下文，用于线程切换
@@ -81,3 +88,4 @@ pub struct RtContext{
     sp: usize,
     s: [usize; 12],
 }
+
