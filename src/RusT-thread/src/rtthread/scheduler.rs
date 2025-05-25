@@ -156,9 +156,11 @@ impl Scheduler {
         if self.lock_nest > 0 {
             return;
         }
-        
 
-
+        // 获取最高优先级
+        let priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
+        // 获取最高优先级的线程
+        let thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(priority);
 
         // 开中断
         todo!("开中断");
