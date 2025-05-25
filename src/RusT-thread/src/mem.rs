@@ -7,28 +7,64 @@
 //! 
 //! The module also provides RT-Thread compatible memory management APIs.
 
+#![allow(unused_imports)]
+extern crate alloc;
+
 // 从rtdef module导入类型
 use crate::rtdef::{
     rt_err_t, rt_size_t, 
     RT_EOK, RT_TRUE, RT_FALSE, RT_ALIGN_SIZE,
 };
 
-use core::{mem, ptr}; // mem module，作用是提供内存相关的函数和类型，ptr module，作用是提供指针相关的函数和类型
+use core::{mem, ptr, cell::{RefCell, UnsafeCell}}; // mem module，作用是提供内存相关的函数和类型，ptr module，作用是提供指针相关的函数和类型
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use spin::Mutex;
 
-use core::sync::atomic::{AtomicBool, Ordering}; // 原子布尔类型，支持线程安全的布尔操作，常用于线程安全的标志状态；Ordering 指定原子操作的内存顺序，确保内存可见性和有序性
+use core::sync::atomic::{AtomicBool, Ordering, AtomicUsize}; // 原子布尔类型，支持线程安全的布尔操作，常用于线程安全的标志状态；Ordering 指定原子操作的内存顺序，确保内存可见性和有序性
 
-// 此处应该导入中断控制函数，但由于rthw模块尚未实现，我们创建临时空实现
-// 实际使用时需要替换为真实的中断控制函数
-#[inline]
-fn rt_hw_interrupt_disable() -> usize {
-    // 临时空实现，返回一个假的中断状态
-    0
+// // 此处应该导入中断控制函数，但由于rthw模块尚未实现，我们创建临时空实现
+// // 实际使用时需要替换为真实的中断控制函数
+// #[inline]
+// fn rt_hw_interrupt_disable() -> usize {
+//     // 临时空实现，返回一个假的中断状态
+//     0
+// }
+
+// #[inline]
+// fn rt_hw_interrupt_enable(_level: usize) {
+//     // 临时空实现，不做任何操作
+// }
+
+// ========== BEGIN: 临时中断控制实现（测试用） ==========
+// ⚠️ 注意：外部实现中断函数后删除此段
+
+/// 禁用中断，返回旧的 PRIMASK 状态
+#[inline(always)]
+pub fn rt_hw_interrupt_disable() -> usize {
+    let primask: usize;
+    unsafe {
+        core::arch::asm!(
+            "mrs {0}, PRIMASK",
+            "cpsid i",
+            out(reg) primask,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    primask
 }
 
-#[inline]
-fn rt_hw_interrupt_enable(_level: usize) {
-    // 临时空实现，不做任何操作
+/// 恢复之前保存的 PRIMASK 状态
+#[inline(always)]
+pub fn rt_hw_interrupt_enable(level: usize) {
+    unsafe {
+        if level == 0 {
+            core::arch::asm!("cpsie i", options(nomem, nostack, preserves_flags));
+        }
+    }
 }
+
+// ========== END: 临时中断控制实现 ==========
 
 // Re-export from the original file
 const HEAP_START: usize = 0x10000000;
@@ -73,17 +109,204 @@ pub struct RTObject {
     pub obj_type: u8,
     /// 对象的标志状态
     pub flag: u8,
-    /// 对象的列表节点
-    pub list: RTList,
 }
 
-/// 链表节点
-#[repr(C)]
-pub struct RTList {
-    /// 下一个节点的指针
-    pub next: *mut RTList,
-    /// 前一个节点的指针
-    pub prev: *mut RTList,
+// 简单的ID生成器和对象存储系统
+static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1); // 每次生成一个新的对象，这个ID就会加1
+
+// 安全的对象列表实现，不使用裸指针在线程间共享
+#[derive(Default)]
+pub struct SafeRTList {
+    // 存储对象ID
+    objects: UnsafeCell<Vec<usize>>,
+}
+
+unsafe impl Sync for SafeRTList {} // 允许在多线程环境中使用
+
+// 对象映射表（因为这是单线程环境中的全局变量，不需要线程安全）
+struct ObjectRegistry {
+    // 存储对象和ID的映射关系
+    id_to_ptr: UnsafeCell<Vec<*mut RTObject>>,
+}
+
+unsafe impl Sync for ObjectRegistry {}
+
+impl ObjectRegistry {
+    const fn new() -> Self {
+        Self {
+            id_to_ptr: UnsafeCell::new(Vec::new()),
+        }
+    }
+
+    fn register(&self, object: *mut RTObject) -> usize {
+        let id = NEXT_OBJECT_ID.fetch_add(1, Ordering::SeqCst);
+        
+        unsafe {
+            let vec = &mut *self.id_to_ptr.get();
+            
+            // 确保向量有足够空间
+            if vec.len() <= id {
+                vec.resize(id + 1, ptr::null_mut());
+            }
+            
+            // 存储对象指针
+            vec[id] = object;
+        }
+        
+        id
+    }
+    
+    fn unregister(&self, id: usize) {
+        unsafe {
+            let vec = &mut *self.id_to_ptr.get();
+            if id < vec.len() {
+                vec[id] = ptr::null_mut();
+            }
+        }
+    }
+    
+    fn get_object(&self, id: usize) -> *mut RTObject {
+        unsafe {
+            let vec = &*self.id_to_ptr.get();
+            if id < vec.len() {
+                vec[id]
+            } else {
+                ptr::null_mut()
+            }
+        }
+    }
+    
+    fn find_id(&self, object: *mut RTObject) -> Option<usize> {
+        unsafe {
+            let vec = &*self.id_to_ptr.get();
+            for (id, &ptr) in vec.iter().enumerate() {
+                if ptr == object {
+                    return Some(id);
+                }
+            }
+            None
+        }
+    }
+}
+
+// 全局对象注册表
+static OBJECT_REGISTRY: ObjectRegistry = ObjectRegistry::new();
+
+impl SafeRTList {
+    // 创建一个新的安全链表
+    const fn new() -> Self {
+        Self {
+            objects: UnsafeCell::new(Vec::new()),
+        }
+    }
+
+    // 添加对象到链表，返回对象ID
+    pub fn add(&self, object: *mut RTObject) -> usize {
+        // 注册对象并获取ID
+        let id = OBJECT_REGISTRY.register(object);
+        
+        // 将ID添加到对象列表
+        unsafe {
+            let objects = &mut *self.objects.get();
+            objects.push(id);
+        }
+        
+        id
+    }
+
+    // 从链表中移除对象
+    pub fn remove(&self, object: *mut RTObject) {
+        // 查找对象ID
+        if let Some(id) = OBJECT_REGISTRY.find_id(object) {
+            // 从映射表中移除
+            OBJECT_REGISTRY.unregister(id);
+            
+            // 从对象列表中移除
+            unsafe {
+                let objects = &mut *self.objects.get();
+                if let Some(index) = objects.iter().position(|&x| x == id) {
+                    objects.remove(index);
+                }
+            }
+        }
+    }
+
+    // 检查对象是否在链表中
+    pub fn contains(&self, object: *mut RTObject) -> bool {
+        if let Some(id) = OBJECT_REGISTRY.find_id(object) {
+            unsafe {
+                let objects = &*self.objects.get();
+                objects.contains(&id)
+            }
+        } else {
+            false
+        }
+    }
+
+    // 获取链表中的对象数量
+    pub fn len(&self) -> usize {
+        unsafe {
+            let objects = &*self.objects.get();
+            objects.len()
+        }
+    }
+
+    // 遍历链表中的所有对象
+    pub fn for_each<F>(&self, mut f: F) where F: FnMut(*mut RTObject) {
+        unsafe {
+            let objects = &*self.objects.get();
+            for &id in objects.iter() {
+                let ptr = OBJECT_REGISTRY.get_object(id);
+                if !ptr.is_null() {
+                    f(ptr);
+                }
+            }
+        }
+    }
+}
+
+// 全局对象链表（静态常量初始化）
+static OBJECT_LIST: SafeRTList = SafeRTList::new();
+
+/// 安全的内存块引用，用于封装内存块操作
+struct MemBlockRef<'a> {
+    /// 小内存管理对象引用
+    small_mem: &'a mut RTSmallMem,
+    /// 内存块指针
+    mem: *mut RTSmallMemItem,
+}
+
+impl<'a> MemBlockRef<'a> {
+    /// 创建新的内存块引用
+    fn new(small_mem: &'a mut RTSmallMem, mem: *mut RTSmallMemItem) -> Self {
+        Self { small_mem, mem }
+    }
+    
+    /// 检查内存块是否被使用
+    fn is_used(&self) -> bool {
+        unsafe { mem_is_used(self.mem) }
+    }
+    
+    /// 获取内存块大小
+    fn size(&self) -> usize {
+        unsafe { 
+            mem_size(self.small_mem as *const RTSmallMem, self.mem) 
+        }
+    }
+    
+    /// 标记内存块为已使用
+    fn mark_used(&mut self) {
+        unsafe {
+            (*self.mem).pool_ptr = mem_used(self.small_mem as *const RTSmallMem);
+        }
+    }
+    
+    /// 标记内存块为已释放
+    fn mark_free(&mut self) {
+        unsafe {
+            (*self.mem).pool_ptr = mem_freed(self.small_mem as *const RTSmallMem);
+        }
+    }
 }
 
 /// RTSmallMemItem 结构体表示一个小内存块的基本信息，主要用于管理内存池中的单个内存块
@@ -165,6 +388,7 @@ fn mem_freed(small_mem: *const RTSmallMem) -> usize {
 
 /// 合并相邻的空闲内存块
 fn plug_holes(m: *mut RTSmallMem, mem: *mut RTSmallMemItem) {
+    // 安全检查
     unsafe {
         let heap_ptr = (*m).heap_ptr;
         let heap_end = (*m).heap_end;
@@ -204,6 +428,7 @@ fn plug_holes(m: *mut RTSmallMem, mem: *mut RTSmallMemItem) {
 }
 
 /// 初始化小内存管理
+#[must_use]
 pub fn rt_smem_init(name: &str, begin_addr: *mut u8, size: usize) -> RTSmemT {
     unsafe {
         // 对齐起始地址
@@ -213,7 +438,7 @@ pub fn rt_smem_init(name: &str, begin_addr: *mut u8, size: usize) -> RTSmemT {
         
         let start_addr = small_mem_ptr + mem::size_of::<RTSmallMem>();
         let begin_align = (start_addr + RT_ALIGN_SIZE as usize - 1) 
-                           & !(RT_ALIGN_SIZE as usize - 1);
+                        & !(RT_ALIGN_SIZE as usize - 1);
         let end_align = (begin_addr as usize + size) & !(RT_ALIGN_SIZE as usize - 1);
         
         // 检查对齐和大小
@@ -229,7 +454,7 @@ pub fn rt_smem_init(name: &str, begin_addr: *mut u8, size: usize) -> RTSmemT {
         ptr::write_bytes(small_mem, 0, 1);
         
         // Initialize memory parent object
-        rt_object_init(&mut (*small_mem).parent.parent, RT_OBJECT_CLASS_MEMORY, name);
+        rt_object_init(&mut (*small_mem).parent.parent as *mut RTObject, RT_OBJECT_CLASS_MEMORY, name);
         (*small_mem).parent.algorithm = "small";
         (*small_mem).parent.address = begin_align;
         (*small_mem).parent.total = mem_size;
@@ -267,7 +492,7 @@ pub fn rt_smem_init(name: &str, begin_addr: *mut u8, size: usize) -> RTSmemT {
 pub fn rt_smem_detach(m: RTSmemT) -> rt_err_t {
     // 修改为正确的对象引用
     unsafe {
-        rt_object_detach(&mut (*m).parent);
+        rt_object_detach(m as *mut RTObject);
     }
     RT_EOK
 }
@@ -518,8 +743,8 @@ pub fn rt_smem_free(rmem: *mut u8) {
 /// Object class types
 pub const RT_OBJECT_CLASS_MEMORY: u8 = 8;
 
-/// Initialize an object
-fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
+/// Initialize an object - 公开此函数
+pub fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
     unsafe {
         // Copy name with limited length
         ptr::write_bytes(&mut (*object).name, 0, (*object).name.len());
@@ -535,19 +760,15 @@ fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
         (*object).obj_type = obj_type;
         (*object).flag = 0;
         
-        // Initialize list
-        (*object).list.next = &mut (*object).list;
-        (*object).list.prev = &mut (*object).list;
+        // 添加到安全链表
+        OBJECT_LIST.add(object);
     }
 }
 
-/// Detach an object
-fn rt_object_detach(object: *mut RTObject) {
-    unsafe {
-        // Just clear the object's list node
-        (*object).list.next = &mut (*object).list;
-        (*object).list.prev = &mut (*object).list;
-    }
+/// Detach an object - 公开此函数
+pub fn rt_object_detach(object: *mut RTObject) {
+    // 从安全链表中移除
+    OBJECT_LIST.remove(object);
 }
 
 // Global allocator implementation
@@ -599,3 +820,88 @@ pub use self::rt_smem_detach as rt_mem_detach;
 pub use self::rt_smem_alloc as rt_malloc;
 pub use self::rt_smem_realloc as rt_realloc;
 pub use self::rt_smem_free as rt_free;
+
+/// 安全的内存分配器包装
+pub struct MemAllocator {
+    mem: RTSmemT,
+}
+
+impl MemAllocator {
+    /// 创建一个新的内存分配器
+    pub fn new(name: &str, begin_addr: *mut u8, size: usize) -> Option<Self> {
+        let mem = rt_smem_init(name, begin_addr, size);
+        if mem.is_null() {
+            None
+        } else {
+            Some(Self { mem })
+        }
+    }
+    
+    /// 分配指定大小的内存块
+    pub fn alloc(&self, size: usize) -> Option<*mut u8> {
+        let ptr = rt_smem_alloc(self.mem, size);
+        if ptr.is_null() {
+            None
+        } else {
+            Some(ptr)
+        }
+    }
+    
+    /// 重新分配内存块
+    pub fn realloc(&self, ptr: *mut u8, new_size: usize) -> Option<*mut u8> {
+        let new_ptr = rt_smem_realloc(self.mem, ptr, new_size);
+        if new_ptr.is_null() {
+            None
+        } else {
+            Some(new_ptr)
+        }
+    }
+    
+    /// 释放内存块
+    pub fn free(&self, ptr: *mut u8) {
+        rt_smem_free(ptr);
+    }
+    
+    /// 获取已使用的内存大小
+    pub fn used_size(&self) -> usize {
+        unsafe { (*self.mem).used }
+    }
+    
+    /// 获取总内存大小
+    pub fn total_size(&self) -> usize {
+        unsafe { (*self.mem).total }
+    }
+}
+
+impl Drop for MemAllocator {
+    fn drop(&mut self) {
+        rt_smem_detach(self.mem);
+    }
+}
+
+/// 打印内存管理状态信息，用于调试
+pub fn rt_mem_info(mem: RTSmemT) {
+    use cortex_m_semihosting::hprintln;
+    
+    if mem.is_null() {
+        let _ = hprintln!("Memory object is null");
+        return;
+    }
+    
+    unsafe {
+        let _ = hprintln!("--- Memory Info ---");
+        let _ = hprintln!("Algorithm: {}", (*mem).algorithm);
+        let _ = hprintln!("Address: 0x{:x}", (*mem).address);
+        let _ = hprintln!("Total size: {} bytes", (*mem).total);
+        let _ = hprintln!("Used size: {} bytes", (*mem).used);
+        let _ = hprintln!("Max used: {} bytes", (*mem).max_used);
+        let _ = hprintln!("------------------");
+        
+        // 如果是小内存对象，打印更多信息
+        let small_mem = mem as *mut RTSmallMem;
+        let _ = hprintln!("Heap ptr: {:p}", (*small_mem).heap_ptr);
+        let _ = hprintln!("Heap end: {:p}", (*small_mem).heap_end);
+        let _ = hprintln!("Lowest free: {:p}", (*small_mem).lfree);
+        let _ = hprintln!("------------------");
+    }
+}
