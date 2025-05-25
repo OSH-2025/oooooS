@@ -4,6 +4,14 @@
 use core::ffi::c_void;
 use core::ptr;
 use crate::rtconfig;
+extern crate alloc;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use heapless::pool::object::Object;
+use lazy_static::lazy_static;
+use spin::Mutex;
+
+
 
 /// Basic type definitions
 #[deprecated(since = "0.1.0", note = "Use native types i8 instead")]
@@ -83,12 +91,65 @@ pub const RT_THREAD_RUNNING: u8 = 0x03;
 pub const RT_THREAD_CLOSE: u8 = 0x04;
 pub const RT_THREAD_STAT_MASK: u8 = 0x07;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum ThreadState {
-    Init,
-    Ready,
-    Suspend,
-    Running,
-    Closed,
+    // 基本状态 (0x00-0x07)
+    Init = 0x00,    // 初始状态
+    Ready = 0x01,   // 就绪状态
+    Suspend = 0x02, // 挂起状态
+    Running = 0x03, // 运行状态
+    Close = 0x04,   // 关闭状态
+
+    // 状态掩码
+    StatMask = 0x07,
+
+    // 让出标志 (0x08)
+    Yield = 0x08,   // 表示自上次调度以来是否重新加载了remaining_tick
+
+    // 信号相关标志 (0x10-0xf0)
+    Signal = 0x10,           // 任务持有信号
+    SignalReady = 0x11,      // 信号就绪状态 (Signal | Ready)
+    SignalWait = 0x20,       // 任务等待信号
+    SignalPending = 0x40,    // 信号已持有但未处理
+    SignalMask = 0xf0,
+}
+
+impl ThreadState {
+    // 获取基本状态
+    pub fn get_stat(&self) -> u8 {
+        let value = *self as u8;
+        value & (Self::StatMask as u8)
+    }
+
+    // 检查是否包含让出标志
+    pub fn has_yield(&self) -> bool {
+        let value = *self as u8;
+        (value & (Self::Yield as u8)) != 0
+    }
+
+    // 设置让出标志
+    pub fn set_yield(&mut self) {
+        let value = *self as u8;
+        *self = unsafe { core::mem::transmute(value | (Self::Yield as u8)) };
+    }
+
+    // 清除让出标志
+    pub fn clear_yield(&mut self) {
+        let value = *self as u8;
+        *self = unsafe { core::mem::transmute(value & !(Self::Yield as u8)) };
+    }
+
+    // 检查是否包含信号标志
+    pub fn has_signal(&self) -> bool {
+        let value = *self as u8;
+        (value & (Self::SignalMask as u8)) != 0
+    }
+
+    // 获取信号相关状态
+    pub fn get_signal_stat(&self) -> u8 {
+        let value = *self as u8;
+        value & (Self::SignalMask as u8)
+    }
 }
 
 /// Error code definitions
@@ -132,7 +193,42 @@ pub const RT_IPC_CMD_RESET: u8 = 0x01;
 pub const RT_WAITING_FOREVER: i32 = -1;
 pub const RT_WAITING_NO: i32 = 0;
 
+
+
 /// Thread priority
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ThreadPriority(pub u8);
 
+
+lazy_static! {
+    static ref RT_OBJECT_LIST: Mutex<Vec<&'static RtObject>> = Mutex::new(Vec::new());
+}
+
+
+
+struct RtObject {
+    /// 用来储存对象的名称的数组
+    pub name: [u8; rtconfig::RT_NAME_MAX],
+    /// 对象的类型
+    pub obj_type: u8,
+    /// 对象的标志状态
+    pub flag: u8,
+}
+
+impl RtObject {
+    /// 创建一个新的RtObject实例
+    pub fn new(name: &str, obj_type: u8, flag: u8) -> &'static Self {
+        let mut name_buf = [0u8; rtconfig::RT_NAME_MAX];
+        let name_bytes = name.as_bytes();
+        let len = name_bytes.len().min(rtconfig::RT_NAME_MAX);
+        name_buf[..len].copy_from_slice(&name_bytes[..len]);
+        let obj = Box::leak(Box::new(Self {
+            name: name_buf,
+            obj_type,
+            flag,
+        }));
+        RT_OBJECT_LIST.lock().push(obj);
+        obj
+    }
+    
+}

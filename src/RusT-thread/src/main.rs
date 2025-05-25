@@ -21,8 +21,16 @@ mod rtthread;
 mod kservice;
 mod mem;
 mod rtconfig;
-mod rtthread;
 
+
+#[entry]
+fn main() -> ! {
+
+    hprintln!("Hello, world!");
+
+    loop {
+        asm::nop();
+    }    
 
 /*
 // // 定义一个测试用的堆内存区域
@@ -161,9 +169,4 @@ mod rtthread;
     // irq::rt_interrupt_enter_sethook(test_hook);
     // irq::rt_interrupt_enter();
     // irq::rt_interrupt_leave();
-
-    
-    loop {
-        asm::nop();
-    }
 }
