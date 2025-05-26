@@ -15,7 +15,7 @@ use spin::Mutex;
 
 mod rtdef;
 mod irq;
-// mod rthw;
+mod context;
 mod rtthread;
 mod kservice;
 mod mem;
