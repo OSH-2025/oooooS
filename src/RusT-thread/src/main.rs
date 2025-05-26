@@ -15,7 +15,7 @@ use spin::Mutex;
 
 mod rtdef;
 // mod cpuport;
-// mod irq;
+mod irq;
 // mod rthw;
 mod rtthread;
 mod kservice;
