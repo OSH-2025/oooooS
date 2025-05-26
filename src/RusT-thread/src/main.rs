@@ -14,9 +14,8 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 
 mod rtdef;
-// mod cpuport;
-// mod irq;
-// mod rthw;
+mod irq;
+mod context;
 mod rtthread;
 mod kservice;
 mod mem;

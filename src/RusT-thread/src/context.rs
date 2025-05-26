@@ -6,11 +6,11 @@ use core::arch::asm;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 // 寄存器常量定义
-const SCB_VTOR: u32 = 0xE000ED08;
-const NVIC_INT_CTRL: u32 = 0xE000ED04;
-const NVIC_SYSPRI2: u32 = 0xE000ED20;
-const NVIC_PENDSV_PRI: u32 = 0xFFFF0000;
-const NVIC_PENDSVSET: u32 = 0x10000000;
+const SCB_VTOR: u32 = 0xE000ED08;           // Vector Table Offset Register
+const NVIC_INT_CTRL: u32 = 0xE000ED04;      // interrupt control state register
+const NVIC_SYSPRI2: u32 = 0xE000ED20;       // system priority register (2)
+const NVIC_PENDSV_PRI: u32 = 0xFFFF0000;    // PendSV and SysTick priority value (lowest)
+const NVIC_PENDSVSET: u32 = 0x10000000;     // value to trigger PendSV exception
 
 // 线程切换标志
 pub static THREAD_SWITCH_FLAG: AtomicBool = AtomicBool::new(false);
@@ -47,7 +47,7 @@ pub fn trigger_context_switch() {
 /// * `from_sp`: 当前线程的栈指针
 /// * `to_sp`: 目标线程的栈指针
 #[inline]
-pub fn context_switch(from_sp: *mut u32, to_sp: *mut u32) {
+pub fn rt_hw_context_switch(from_sp: *mut u32, to_sp: *mut u32) {
     // 设置线程切换标志
     THREAD_SWITCH_FLAG.store(true, Ordering::SeqCst);
     
@@ -59,8 +59,22 @@ pub fn context_switch(from_sp: *mut u32, to_sp: *mut u32) {
     trigger_context_switch();
 }
 
+/// 中断中的线程上下文切换
+/// 
+/// 与 rt_hw_context_switch 功能相同，但用于中断中的上下文切换
+/// 
+/// # 参数
+/// 
+/// * `from_sp`: 当前线程的栈指针
+/// * `to_sp`: 目标线程的栈指针
+#[inline]
+pub fn rt_hw_context_switch_interrupt(from_sp: *mut u32, to_sp: *mut u32) {
+    // 在 Cortex-M4 中，中断中的上下文切换与普通上下文切换相同
+    rt_hw_context_switch(from_sp, to_sp)
+}
+
 /// 直接切换到指定线程（不保存当前上下文）
-pub fn context_switch_to(to_sp: *mut u32) {
+pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
     // 设置目标线程的栈指针
     NEXT_THREAD_SP.store(to_sp, Ordering::SeqCst);
     
