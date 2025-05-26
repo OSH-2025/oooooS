@@ -38,3 +38,4 @@ tiny_ffs = []
 full_ffs = []
 hook = []
 mem_trace = [] # 内存跟踪功能，用于调试与分析
+debug = []

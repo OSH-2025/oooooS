@@ -74,7 +74,7 @@ pub fn rt_interrupt_enter() {
     #[cfg(feature = "debug")]
     {
         hprintln!("enter interrupt, nest:{}", 
-            RT_INTERRUPT_NEST as i32);
+            RT_INTERRUPT_NEST.load(Ordering::Acquire) as i32);
     }
 }
 
@@ -83,7 +83,7 @@ pub fn rt_interrupt_leave() {
     #[cfg(feature = "debug")]
     {
         hprintln!("leave interrupt, nest:{}", 
-            RT_INTERRUPT_NEST as i32);
+            RT_INTERRUPT_NEST.load(Ordering::Acquire) as i32);
     }
     {
         let level = rt_hw_interrupt_disable();
