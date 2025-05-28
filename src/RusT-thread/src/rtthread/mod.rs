@@ -1,3 +1,3 @@
-mod thread;
-mod scheduler;
+pub mod thread;
+pub mod scheduler;
 // mod idle;

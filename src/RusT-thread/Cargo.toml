@@ -20,6 +20,7 @@ lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 spin = "0.9.8"
 heapless = "0.8.0"
 
+
 [[bin]]
 name = "RusT-thread"
 test = false
@@ -31,7 +32,8 @@ debug = true # symbols are nice and they don't increase the size on Flash
 lto = true # better optimizations
 
 [features]
-default = ["buddy_system_allocator", "tiny_ffs"]
+default = ["buddy_system_allocator", "tiny_ffs","test"]
+#default = ["good_memory_allocator", "tiny_ffs","test"]
 good_memory_allocator = ["dep:good_memory_allocator"]
 buddy_system_allocator = ["dep:buddy_system_allocator"]
 tiny_ffs = []
@@ -39,3 +41,5 @@ full_ffs = []
 hook = []
 mem_trace = [] # 内存跟踪功能，用于调试与分析
 debug = []
+test = ["test_thread"]
+test_thread = []

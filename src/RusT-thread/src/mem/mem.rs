@@ -66,9 +66,7 @@ pub fn rt_hw_interrupt_enable(level: usize) {
 
 // ========== END: 临时中断控制实现 ==========
 
-// Re-export from the original file
-const HEAP_START: usize = 0x10000000;
-const HEAP_SIZE: usize = 1024 * 1024; // 1MB
+
 
 // 内存管理的算法常量
 const HEAP_MAGIC: u32 = 0x1ea0; // magic number是用于识别堆是否初始化或已销毁的标志
@@ -771,48 +769,8 @@ pub fn rt_object_detach(object: *mut RTObject) {
     OBJECT_LIST.remove(object);
 }
 
-// Global allocator implementation
 
-// Initialize heap status
-static HEAP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-#[cfg(feature = "good_memory_allocator")]
-/// Initialize heap memory for the global allocator
-pub fn init_heap() {
-    if !HEAP_INITIALIZED.load(Ordering::SeqCst) {
-        unsafe {
-            ALLOCATOR.init(HEAP_START as *mut u8, HEAP_SIZE);
-        }
-        HEAP_INITIALIZED.store(true, Ordering::SeqCst);
-    }
-}
-
-#[cfg(feature = "buddy_system_allocator")]
-/// Initialize heap memory for the global allocator
-pub fn init_heap() {
-    if !HEAP_INITIALIZED.load(Ordering::SeqCst) {
-        unsafe {
-            HEAP_ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
-        }
-        HEAP_INITIALIZED.store(true, Ordering::SeqCst);
-    }
-}
-
-// Declare global allocators based on the selected feature
-
-#[cfg(feature = "good_memory_allocator")]
-use good_memory_allocator::SpinLockedAllocator;
-
-#[cfg(feature = "buddy_system_allocator")]
-use buddy_system_allocator::LockedHeap;
-
-#[cfg(feature = "good_memory_allocator")]
-#[global_allocator]
-static ALLOCATOR: SpinLockedAllocator = SpinLockedAllocator::empty();
-
-#[cfg(feature = "buddy_system_allocator")]
-#[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::empty();
 
 // Export public functions
 pub use self::rt_smem_init as rt_mem_init;

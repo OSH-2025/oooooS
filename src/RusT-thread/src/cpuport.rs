@@ -40,10 +40,10 @@ pub struct StackFrame {
 
 // 栈初始化函数
 pub unsafe fn rt_hw_stack_init(
-    tentry: extern "C" fn(*mut u8),
+    tentry: usize,
     parameter: *mut u8,
     stack_addr: *mut RtUint8,
-    texit: extern "C" fn(),
+    texit: usize,
 ) -> *mut RtUint8 {
     // 栈顶对齐到8字节
     let mut stk = stack_addr.add(core::mem::size_of::<RtUint32>()) as usize;
@@ -328,7 +328,4 @@ pub unsafe fn rt_hw_hard_fault_exception(exception_info: *mut ExceptionInfo) {
     hard_fault_track();
     loop {}
 }
-
-// ... 后续可继续迁移异常处理、CPU关机/重启等功能 ...
-
 
