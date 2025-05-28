@@ -1,5 +1,4 @@
 use core::sync::atomic::{AtomicBool, Ordering};
-use cortex_m_semihosting::hprintln;
 
 // Global allocator implementation
 
@@ -32,9 +31,7 @@ static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::empty();
 pub fn init_heap() {
     if !HEAP_INITIALIZED.load(Ordering::SeqCst) {
         unsafe {
-            hprintln!("init_heap");
             ALLOCATOR.init(HEAP_START, HEAP_SIZE);
-            hprintln!("init_heap done");
         }
         HEAP_INITIALIZED.store(true, Ordering::SeqCst);
     }
@@ -44,13 +41,11 @@ pub fn init_heap() {
 /// Initialize heap memory for the global allocator
 pub fn init_heap() {
     if !HEAP_INITIALIZED.load(Ordering::SeqCst) {
-        hprintln!("init_heap");
         unsafe {
             HEAP_ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
             // or
             // HEAP_ALLOCATOR.lock().add_to_heap(HEAP_START, HEAP_START + HEAP_SIZE);
         }
         HEAP_INITIALIZED.store(true, Ordering::SeqCst);
-        hprintln!("init_heap done");
     }
 }
