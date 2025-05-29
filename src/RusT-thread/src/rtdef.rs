@@ -205,8 +205,8 @@ lazy_static! {
 }
 
 
-
-struct RtObject {
+#[derive(Clone)]
+pub struct RtObject {
     /// 用来储存对象的名称的数组
     pub name: [u8; rtconfig::RT_NAME_MAX],
     /// 对象的类型

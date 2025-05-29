@@ -20,6 +20,8 @@ mod rtthread;
 mod kservice;
 mod mem;
 mod rtconfig;
+mod clock;
+mod timer;
 
 
 #[entry]

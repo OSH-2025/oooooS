@@ -1,7 +1,10 @@
 use lazy_static::lazy_static;
 use crate::kservice::RTIntrFreeCell;
-use crate::rtthread::thread::RtThread;
+// use crate::rtthread::thread::RtThread;
 use crate::rtconfig::RT_TICK_PER_SECOND;
+use crate::irq::rt_hw_interrupt_disable;
+use crate::irq::rt_hw_interrupt_enable;
+use crate::timer::rt_timer_check;
 
 // 线程让出标志
 pub const RT_THREAD_STAT_YIELD: u8 = 0x08;
@@ -25,19 +28,21 @@ pub fn rt_tick_set(tick: u32) {
 //时钟中断处理函数
 pub fn rt_tick_increase() {
 
+    let level = rt_hw_interrupt_disable();
     *RT_TICK.exclusive_access() +=1 ;
 
-    let thread = RtThread::current();//TODO: 获取当前线程
-    thread.inner.exclusive_access().remaining_tick -= 1;
+    // let thread = RtThread::current();//TODO: 获取当前线程
+    // thread.inner.exclusive_access().remaining_tick -= 1;
 
-    if thread.inner.exclusive_access().remaining_tick == 0 {
-        thread.inner.exclusive_access().remaining_tick = thread.inner.exclusive_access().init_tick;
-        thread.inner.exclusive_access().stat |= RT_THREAD_STAT_YIELD;
-        RtThread::schedule();//TODO: 重新调度
-    }
+    // if thread.inner.exclusive_access().remaining_tick == 0 {
+    //     thread.inner.exclusive_access().remaining_tick = thread.inner.exclusive_access().init_tick;
+    //     thread.inner.exclusive_access().stat |= RT_THREAD_STAT_YIELD;
+    //     RtThread::schedule();//TODO: 重新调度
+    // }
 
+    rt_hw_interrupt_enable(level);
     // 检查定时器
-    //TODO: 检查定时器
+    rt_timer_check();
 }
 
 // 将毫秒转换为时钟周期
