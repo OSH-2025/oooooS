@@ -29,15 +29,19 @@ pub fn test_thread_context_switch() {
     hprintln!("test_thread_context_switch");
     // 创建线程栈1
     let kernel_stack1 = KernelStack::new(KERNEL_STACK_SIZE);
-    hprintln!("kernel_stack1: {:#x}", kernel_stack1.bottom());
+    // hprintln!("kernel_stack1: {:#x}", kernel_stack1.bottom());
+    hprintln!("kernel_stack1: {:#x}", kernel_stack1.top());
     // 初始化线程1的栈
     unsafe {
         let sp = rt_hw_stack_init(
             thread1 as usize,
             0 as *mut u8,
-            kernel_stack1.bottom() as *mut u8,
+            kernel_stack1.top() as *mut u8,
             0 as usize
         );
+
+
+        hprintln!("sp: {:#x}", sp as usize);
 
         // 切换到线程1
         rt_hw_context_switch_to(sp as *mut u32);

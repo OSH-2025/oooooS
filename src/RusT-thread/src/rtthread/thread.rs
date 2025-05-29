@@ -164,6 +164,10 @@ impl KernelStack {
         self.bottom
     }
 
+    pub fn top(&self) -> usize {
+        self.bottom + self.size
+    }
+
     pub fn init(&self,entry: usize,parameter: usize,texit: usize) {
         unsafe {
             

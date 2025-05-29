@@ -26,10 +26,68 @@ pub static NEXT_THREAD_SP: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut()
 /// 初始化上下文切换机制
 pub fn init() {
     unsafe {
+        hprintln!("init: set PendSV interrupt priority");
         // 设置PendSV中断为最低优先级
         let nvic_syspri2 = NVIC_SYSPRI2 as *mut u32;
         let temp = core::ptr::read_volatile(nvic_syspri2);
         core::ptr::write_volatile(nvic_syspri2, temp | NVIC_PENDSV_PRI);
+        hprintln!("init: set PendSV interrupt priority done");
+
+        // 确保PendSV中断是使能的
+        let nvic_iser = 0xE000E100 as *mut u32;  // NVIC ISER0
+        core::ptr::write_volatile(nvic_iser, 1 << 14);  // PendSV中断号是14
+        hprintln!("init: enable PendSV interrupt done");
+
+        // 设置向量表偏移
+        let vtor = SCB_VTOR as *mut u32;
+        let vector_table = 0x8000000 as u32;  // Flash起始地址
+        core::ptr::write_volatile(vtor, vector_table);
+        hprintln!("init: set vector table done");
+
+        // 设置中断处理函数地址
+        let handlers = [
+            (2, HardFault_Handler as usize as u32),  // HardFault
+            (3, MemManage_Handler as usize as u32),  // MemManage
+            (4, BusFault_Handler as usize as u32),   // BusFault
+            (5, UsageFault_Handler as usize as u32), // UsageFault
+            (6, 0),                                  // Reserved
+            (7, 0),                                  // Reserved
+            (8, 0),                                  // Reserved
+            (9, 0),                                  // Reserved
+            (10, 0),                                 // Reserved
+            (11, 0),                                 // SVCall
+            (12, 0),                                 // Debug Monitor
+            (13, 0),                                 // Reserved
+            (14, PendSV_Handler as usize as u32),    // PendSV
+            (15, 0),                                 // SysTick
+        ];
+
+        for (index, handler) in handlers.iter() {
+            if *handler != 0 {
+                let vector = (vector_table + *index * 4) as *mut u32;
+                core::ptr::write_volatile(vector, *handler);
+                hprintln!("init: set handler {} at {:#x}", index, vector as usize);
+            }
+        }
+        hprintln!("init: set all handlers done");
+
+        // // 初始化MSP（主栈指针）
+        // let msp = (0x20000000u32).wrapping_add(96 * 1024);  // RAM起始地址 + 128KB
+        // hprintln!("init: setting MSP to {:#x}", msp);
+        // asm!("msr msp, {0}", in(reg) msp);
+        // hprintln!("init: set MSP done");
+
+        // // 初始化PSP（进程栈指针）
+        // let psp = (0x20000000u32).wrapping_add(32 * 1024);  // RAM起始地址 + 64KB
+        // hprintln!("init: setting PSP to {:#x}", psp);
+        // asm!("msr psp, {0}", in(reg) psp);
+        // hprintln!("init: set PSP done");
+
+        // 启用中断
+        hprintln!("init: enabling interrupts");
+        asm!("cpsie f");
+        asm!("cpsie i");
+        hprintln!("init: interrupts enabled");
     }
 }
 
@@ -37,8 +95,10 @@ pub fn init() {
 #[inline]
 pub fn trigger_context_switch() {
     unsafe {
+        hprintln!("trigger_context_switch: {:#x}", NVIC_INT_CTRL as usize);
         let nvic_int_ctrl = NVIC_INT_CTRL as *mut u32;
         core::ptr::write_volatile(nvic_int_ctrl, NVIC_PENDSVSET);
+        hprintln!("trigger_context_switch: done");
     }
 }
 
@@ -77,6 +137,7 @@ pub fn rt_hw_context_switch_interrupt(from_sp: *mut u32, to_sp: *mut u32) {
 
 /// 直接切换到指定线程（不保存当前上下文）
 pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
+    hprintln!("rt_hw_context_switch_to: {:#x}", to_sp as usize);
     // 设置目标线程的栈指针
     NEXT_THREAD_SP.store(to_sp, Ordering::SeqCst);
     
@@ -88,27 +149,34 @@ pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
     
     // 设置PendSV中断为最低优先级
     unsafe {
+        hprintln!("rt_hw_context_switch_to: set PendSV interrupt priority");
         let nvic_syspri2 = NVIC_SYSPRI2 as *mut u32;
         let temp = core::ptr::read_volatile(nvic_syspri2);
         core::ptr::write_volatile(nvic_syspri2, temp | NVIC_PENDSV_PRI);
+        hprintln!("rt_hw_context_switch_to: set PendSV interrupt priority done");
     }
     
     // 触发PendSV中断
     trigger_context_switch();
-    
+    hprintln!("rt_hw_context_switch_to: trigger PendSV interrupt");
+
     // 恢复MSP（主栈指针）
     unsafe {
+        hprintln!("rt_hw_context_switch_to: restore MSP");
         let vtor = core::ptr::read_volatile(SCB_VTOR as *const u32);
         let reset_sp = core::ptr::read_volatile(vtor as *const u32);
         asm!("msr msp, {0}", in(reg) reset_sp);
+        hprintln!("rt_hw_context_switch_to: restore MSP done");
     }
     
     // 启用中断
     unsafe {
+        hprintln!("rt_hw_context_switch_to: enable interrupts");
         asm!("cpsie f");
         asm!("cpsie i");
         asm!("dsb");
         asm!("isb");
+        hprintln!("rt_hw_context_switch_to: enable interrupts done");
     }
     
     // 程序不应该到达这里
@@ -126,7 +194,7 @@ pub unsafe extern "C" fn PendSV_Handler() {
             "cpsid i",
             
             // 获取线程切换标志
-            "ldr r0, =THREAD_SWITCH_FLAG",
+            "ldr r0, ={thread_switch_flag}",
             "ldr r1, [r0]",
             "cbz r1, 2f", // 如果标志为0，跳转到标签2（退出）
             
@@ -135,7 +203,7 @@ pub unsafe extern "C" fn PendSV_Handler() {
             "str r1, [r0]",
             
             // 获取当前线程栈指针
-            "ldr r0, =CURRENT_THREAD_SP",
+            "ldr r0, ={current_thread_sp}",
             "ldr r1, [r0]",
             "cbz r1, 1f", // 如果为空，跳转到标签1（切换到目标线程）
             
@@ -166,7 +234,7 @@ pub unsafe extern "C" fn PendSV_Handler() {
             
             // 切换到目标线程
             "1:",
-            "ldr r1, =NEXT_THREAD_SP",
+            "ldr r1, ={next_thread_sp}",
             "ldr r1, [r1]",
             "ldr r1, [r1]", // 获取目标线程栈值
             
@@ -198,6 +266,9 @@ pub unsafe extern "C" fn PendSV_Handler() {
             "orr lr, lr, #0x04",
             "bx lr",
             
+            thread_switch_flag = sym THREAD_SWITCH_FLAG,
+            current_thread_sp = sym CURRENT_THREAD_SP,
+            next_thread_sp = sym NEXT_THREAD_SP,
             options(noreturn)
         );
     }
@@ -247,5 +318,21 @@ pub unsafe extern "C" fn HardFault_Handler() {
 pub unsafe extern "C" fn handle_hardfault() {
     hprintln!("hardfault");
     // 在这里添加错误处理逻辑
+    loop {}
+}
+
+// 其他中断处理函数
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn MemManage_Handler() {
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn BusFault_Handler() {
+    loop {}
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn UsageFault_Handler() {
     loop {}
 } 
