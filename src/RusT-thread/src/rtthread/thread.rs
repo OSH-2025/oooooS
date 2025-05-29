@@ -7,6 +7,13 @@ use crate::kservice::RTIntrFreeCell;
 use alloc::boxed::Box;
 use core::fmt::Debug;
 use alloc::sync::Arc;
+use alloc::alloc::{
+    alloc,
+    dealloc,
+    Layout,
+};
+use cortex_m_semihosting::hprintln;
+pub const KERNEL_STACK_SIZE: usize = 0x400;//1kB
 
 lazy_static! {
     /// 总的线程列表，用户可从中获取所有线程
@@ -34,9 +41,7 @@ pub struct RtThreadInner {
     pub remaining_tick: usize,
 
     /// context
-    pub stack_size: usize,
-    pub stack_addr: usize,
-    pub sp: usize,
+    pub kernel_stack: KernelStack,
     pub context: Vec<RtContext>,
 
     /// user data
@@ -119,9 +124,7 @@ pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: Box<dyn FnOnce
             entry,
             init_tick: tick,
             remaining_tick: tick,
-            stack_size,
-            stack_addr: 0,
-            sp: 0,
+            kernel_stack: KernelStack::new(stack_size),
             context: Vec::new(),
             user_data: 0,
             })
@@ -131,4 +134,52 @@ pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: Box<dyn FnOnce
     let thread_arc = Arc::new(thread);
     RT_THREAD_LIST.exclusive_access().push(thread_arc.clone());
     thread_arc
+}
+
+pub struct KernelStack {
+    bottom: usize,
+    size: usize,
+}
+
+impl KernelStack {
+    pub fn new(size: usize) -> Self {
+        // hprintln!("KernelStack::new: enter");
+        let bottom = unsafe {
+            alloc(Layout::from_size_align(size, size).unwrap()) as usize
+        };
+        // hprintln!("KernelStack::new: bottom: {}", bottom);
+        KernelStack { bottom, size }
+    }
+
+    pub fn new_empty() -> Self {
+        KernelStack { bottom: 0, size: 0 }
+    }
+
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn bottom(&self) -> usize {
+        self.bottom
+    }
+
+    pub fn init(&self,entry: usize,parameter: usize,texit: usize) {
+        unsafe {
+            
+        }
+    }
+}
+
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        if self.bottom != 0 {
+            unsafe {
+                dealloc(
+                    self.bottom as _,
+                    Layout::from_size_align(self.size, self.size).unwrap(),
+                );
+            }
+        }
+    }
 }

@@ -5,6 +5,8 @@
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
+use cortex_m_semihosting::hprintln;
+
 // 寄存器常量定义
 const SCB_VTOR: u32 = 0xE000ED08;           // Vector Table Offset Register
 const NVIC_INT_CTRL: u32 = 0xE000ED04;      // interrupt control state register
@@ -243,6 +245,7 @@ pub unsafe extern "C" fn HardFault_Handler() {
 /// 硬件错误处理函数
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn handle_hardfault() {
+    hprintln!("hardfault");
     // 在这里添加错误处理逻辑
     loop {}
 } 
