@@ -150,7 +150,14 @@ impl ThreadState {
         let value = *self as u8;
         value & (Self::SignalMask as u8)
     }
+
 }
+/// 线程控制命令
+pub const RT_THREAD_CTRL_STARTUP: u8 = 0x00;
+pub const RT_THREAD_CTRL_CLOSE: u8 = 0x01;
+pub const RT_THREAD_CTRL_CHANGE_PRIORITY: u8 = 0x02;
+pub const RT_THREAD_CTRL_INFO: u8 = 0x03;
+pub const RT_THREAD_CTRL_BIND_CPU: u8 = 0x04;
 
 /// Error code definitions
 pub const RT_EOK: RtErrT = 0;
