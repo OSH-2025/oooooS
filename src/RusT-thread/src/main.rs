@@ -29,10 +29,24 @@ mod cpuport;
 fn main() -> ! {
 
     hprintln!("Hello, world!");
+    hprintln!("开始初始化...");
+    
     init();
-    if cfg!(feature = "test") {
-        test::run_all_tests();
+    hprintln!("初始化完成");
+    
+    // 使用条件编译来包含测试代码
+    #[cfg(feature = "test_small_mem")]
+    {
+        hprintln!("开始小内存管理测试...");
+        test::test_small_mem::run_simple_mem_tests();
+        hprintln!("小内存管理测试完成！");
     }
+    
+    #[cfg(not(feature = "test_small_mem"))]
+    {
+        hprintln!("未启用测试功能，程序正常运行");
+    }
+    
     loop {
         asm::nop();
     }    
@@ -41,10 +55,10 @@ fn main() -> ! {
 
 fn init() {
     mem::allocator::init_heap();
+    hprintln!("堆初始化完成");
     // context::init();
     // hprintln!("init done");
 }
-
 
 // ! 测试注意
 // ! 推荐的测试方式是单独写一个测试文件，
