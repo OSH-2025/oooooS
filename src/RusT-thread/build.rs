@@ -16,37 +16,41 @@ use std::io::Write;
 use std::path::PathBuf;
 
 fn main() {
-    // Put `memory.x` in our output directory and ensure it's
-    // on the linker search path.
-    let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    File::create(out.join("memory.x"))
-        .unwrap()
-        .write_all(include_bytes!("memory.x"))
-        .unwrap();
-    println!("cargo:rustc-link-search={}", out.display());
+    // 只有在启用嵌入式特性时才配置嵌入式链接器
+    if cfg!(feature = "embedded") {
+        // Put `memory.x` in our output directory and ensure it's
+        // on the linker search path.
+        let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
+        File::create(out.join("memory.x"))
+            .unwrap()
+            .write_all(include_bytes!("memory.x"))
+            .unwrap();
+        println!("cargo:rustc-link-search={}", out.display());
 
-    // By default, Cargo will re-run a build script whenever
-    // any file in the project changes. By specifying `memory.x`
-    // here, we ensure the build script is only re-run when
-    // `memory.x` is changed.
-    println!("cargo:rerun-if-changed=memory.x");
+        // By default, Cargo will re-run a build script whenever
+        // any file in the project changes. By specifying `memory.x`
+        // here, we ensure the build script is only re-run when
+        // `memory.x` is changed.
+        println!("cargo:rerun-if-changed=memory.x");
 
-    // Specify linker arguments.
+        // Specify linker arguments.
 
-    // `--nmagic` is required if memory section addresses are not aligned to 0x10000,
-    // for example the FLASH and RAM sections in your `memory.x`.
-    // See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
-    println!("cargo:rustc-link-arg=--nmagic");
-    // println!("cargo:rustc-link-arg=-Wl,--nmagic");
+        // `--nmagic` is required if memory section addresses are not aligned to 0x10000,
+        // for example the FLASH and RAM sections in your `memory.x`.
+        // See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
+        println!("cargo:rustc-link-arg=--nmagic");
+        // println!("cargo:rustc-link-arg=-Wl,--nmagic");
 
-    // Set the linker script to the one provided by cortex-m-rt.
-    // println!("cargo:rustc-link-arg=-Wl,-Tlink.x");
-    println!("cargo:rustc-link-arg=-Tlink.x");
-    // cc::Build::new()
-    //     .file("src/cortex-m4/context_gcc.S")
-    //     .flag("-mcpu=cortex-m4")
-    //     .flag("-mthumb")
-    //     .flag("-mfpu=fpv4-sp-d16")
-    //     .flag("-mfloat-abi=hard")
-    //     .compile("context_gcc");
+        // Set the linker script to the one provided by cortex-m-rt.
+        // println!("cargo:rustc-link-arg=-Wl,-Tlink.x");
+        println!("cargo:rustc-link-arg=-Tlink.x");
+        
+        // cc::Build::new()
+        //     .file("src/cortex-m4/context_gcc.S")
+        //     .flag("-mcpu=cortex-m4")
+        //     .flag("-mthumb")
+        //     .flag("-mfpu=fpv4-sp-d16")
+        //     .flag("-mfloat-abi=hard")
+        //     .compile("context_gcc");
+    }
 }

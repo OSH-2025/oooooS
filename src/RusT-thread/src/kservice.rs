@@ -17,8 +17,11 @@
 /// DATA.unlock();
 
 use core::cell::{RefCell, RefMut, UnsafeCell};
+use core::i16;
 use core::ops::{Deref, DerefMut};
 use lazy_static::*;
+use cortex_m_rt::{exception,ExceptionFrame};
+use cortex_m_semihosting::hprintln;
 
 
 
@@ -83,3 +86,35 @@ impl<'a, T> DerefMut for RTIntrRefMut<'a, T> {
         self.0.as_mut().unwrap().deref_mut()
     }
 }
+
+
+
+/// 异常处理
+
+#[exception]
+fn MemoryManagement() -> ! {
+    hprintln!("MemoryManagement");
+    loop {}
+}
+
+#[exception]
+fn BusFault() -> ! {
+    hprintln!("BusFault");
+    loop {}
+}
+
+#[exception]
+fn UsageFault() -> ! {
+    hprintln!("UsageFault");
+    loop {}
+}
+
+#[exception] 
+fn DefaultHandler(irqn: i16) {
+    hprintln!("DefaultHandler: irqn = {}", irqn);
+    loop {}
+}
+
+
+
+
