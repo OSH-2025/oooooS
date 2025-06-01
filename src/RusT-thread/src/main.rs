@@ -50,15 +50,8 @@ fn main() -> ! {
     // 以下是一个使用 HSE 并配置 PLL 的示例
     // 您需要根据您的晶振频率和期望的系统频率进行调整
     let rcc = dp.RCC.constrain();
-    let clocks = rcc.cfgr
-        // .hse(8.MHz()) // 外部高速晶振频率，例如 8MHz
-        .sysclk(100.MHz()) // 系统时钟频率，例如 100MHz
-        // .pclk1(25.MHz()) // APB1 外设时钟
-        // .pclk2(50.MHz()) // APB2 外设时钟
-        // .freeze(&mut dp.FLASH); // 冻结时钟配置，可能需要 Flash 外设
-        .freeze(); // 冻结时钟配置，更简单的示例
-
-    // --- SysTick 初始化 ---
+    let clocks = rcc.cfgr.freeze();
+    // // --- SysTick 初始化 ---
     let syst = cp.SYST;
     // 调用 timer.rs 中的 rt_system_timer_init 函数来配置 SysTick
     timer::rt_system_timer_init(syst, &clocks);
@@ -73,6 +66,12 @@ fn main() -> ! {
             hprintln!("开始小内存管理测试...");
             test::test_small_mem::run_simple_mem_tests();
             hprintln!("小内存管理测试完成！");
+        }
+        #[cfg(feature = "test_timer")]
+        {
+            hprintln!("开始定时器测试...");
+            test::test_timer::run_all_timer_tests();
+            hprintln!("定时器测试完成！");
         }
         test::run_all_tests();
         hprintln!("Tests finished.");
