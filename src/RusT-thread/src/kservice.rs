@@ -110,7 +110,7 @@ fn UsageFault() -> ! {
 }
 
 #[exception] 
-fn DefaultHandler(irqn: i16) {
+unsafe fn DefaultHandler(irqn: i16) {
     hprintln!("DefaultHandler: irqn = {}", irqn);
     loop {}
 }
