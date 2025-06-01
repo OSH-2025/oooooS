@@ -100,14 +100,6 @@ pub unsafe fn rt_hw_stack_init(
 }
 
 
-/* exception and interrupt handler table */
-// #[unsafe(no_mangle)]
-// pub static mut rt_interrupt_from_thread: u32 = 0;
-// #[unsafe(no_mangle)]
-// pub static mut rt_interrupt_to_thread: u32 = 0;
-// #[unsafe(no_mangle)]
-// pub static mut rt_thread_switch_interrupt_flag: u32 = 0;
-
 // 异常钩子
 static mut RT_EXCEPTION_HOOK: Option<unsafe fn(context: *mut core::ffi::c_void) -> i32> = None;
 

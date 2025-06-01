@@ -42,7 +42,6 @@ fn main() {
     // Set the linker script to the one provided by cortex-m-rt.
     // println!("cargo:rustc-link-arg=-Wl,-Tlink.x");
     println!("cargo:rustc-link-arg=-Tlink.x");
-    
     // cc::Build::new()
     //     .file("src/cortex-m4/context_gcc.S")
     //     .flag("-mcpu=cortex-m4")

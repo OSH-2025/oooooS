@@ -7,14 +7,16 @@ use crate::rtthread::thread::*;
 use crate::context::*;
 use crate::cpuport::*;
 use cortex_m_semihosting::hprintln;
+use core::arch::asm;
 
 
 pub extern "C" fn thread1(arg: usize) -> () {
     let mut i = 0;
-    loop {
-        i += 1;
-        hprintln!("thread1: {}", i);
-    }
+    hprintln!("thread1: {}", i);
+    // loop {
+    //     i += 1;
+    //     hprintln!("thread1: {}", i);
+    // }
 }
 
 pub extern "C" fn thread2(arg: usize) -> ! {
