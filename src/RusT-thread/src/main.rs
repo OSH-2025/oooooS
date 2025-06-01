@@ -29,10 +29,8 @@ mod cpuport;
 fn main() -> ! {
 
     hprintln!("Hello, world!");
-    hprintln!("开始初始化...");
-    
+
     init();
-    hprintln!("初始化完成");
     
     // 使用条件编译来包含测试代码
     #[cfg(feature = "test_small_mem")]
@@ -54,10 +52,12 @@ fn main() -> ! {
 }
 
 fn init() {
+    hprintln!("start init...");
     mem::allocator::init_heap();
-    hprintln!("堆初始化完成");
-    // context::init();
-    // hprintln!("init done");
+    hprintln!("heap init done");
+    context::init();
+    hprintln!("context init done");
+    hprintln!("init done");
 }
 
 // ! 测试注意

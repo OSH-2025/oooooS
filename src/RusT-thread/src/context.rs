@@ -56,7 +56,7 @@ pub fn init() {
 #[inline]
 pub fn rt_hw_context_switch(from_sp: *mut u32, to_sp: *mut u32) {
     // 同步更新内部变量和兼容变量
-    update_thread_vars(unsafe { *from_sp }, unsafe { *to_sp });
+    update_thread_vars(unsafe { *from_sp }, to_sp);
     
     // 触发PendSV中断
     unsafe {
@@ -149,7 +149,7 @@ unsafe fn PendSV()  {
             // 获取切换标志
             "ldr r0, =rt_thread_switch_interrupt_flag",
             "ldr r1, [r0]",
-            // "cbz r1, 2f",         // 如果标志为0，跳到退出
+            "cbz r1, 2f",         // 如果标志为0，跳到退出
 
             // 清除切换标志
             "mov r1, #0",
@@ -254,7 +254,7 @@ unsafe fn PendSV()  {
 }
 
 /// 更新线程变量 - 同时更新原子变量和兼容变量
-fn update_thread_vars(from_sp: u32, to_sp: u32) {
+fn update_thread_vars(from_sp: u32, to_sp: *mut u32) {
     let prev_flag = THREAD_SWITCH_FLAG.load(Ordering::SeqCst);
     
     // 只有在没有切换进行时才更新from_sp
@@ -270,11 +270,11 @@ fn update_thread_vars(from_sp: u32, to_sp: u32) {
     }
     
     // 始终更新to_sp
-    NEXT_THREAD_SP.store(to_sp, Ordering::SeqCst);
+    NEXT_THREAD_SP.store(unsafe { *to_sp }, Ordering::SeqCst);
     
     // 更新兼容变量
     unsafe {
-        rt_interrupt_to_thread = to_sp as *mut u32;
+        rt_interrupt_to_thread = to_sp;
     }
 }
 
