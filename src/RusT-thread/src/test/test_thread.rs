@@ -10,6 +10,7 @@ use cortex_m_semihosting::hprintln;
 
 
 pub extern "C" fn thread1(arg: usize) -> () {
+    hprintln!("thread1: {}", arg);
     let mut i = 0;
     loop {
         i += 1;
@@ -49,5 +50,19 @@ pub fn test_thread_context_switch() {
     hprintln!("kernel_stack1: switch");
 }
 
+pub fn test_func_pointer() {
+    // print
+    hprintln!("test_func_pointer");
+    let func_ptr = thread1 as usize;
+    hprintln!("func_ptr: {:#x}", func_ptr);
+
+    // try to call the function
+    unsafe {
+        let func: fn(usize) -> () = core::mem::transmute(func_ptr);
+        hprintln!("Calling thread1...");
+        func(12384);
+    }
+    hprintln!("test_func_pointer done");
+}
 
 
