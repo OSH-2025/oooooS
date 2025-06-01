@@ -41,8 +41,8 @@ fn main() -> ! {
 
 fn init() {
     mem::allocator::init_heap();
-    // context::init();
-    // hprintln!("init done");
+    context::init();
+    hprintln!("init done");
 }
 
 

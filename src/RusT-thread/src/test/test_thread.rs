@@ -36,15 +36,15 @@ pub fn test_thread_context_switch() {
         let sp = rt_hw_stack_init(
             thread1 as usize,
             0 as *mut u8,
-            kernel_stack1.top() as *mut u8,
+            kernel_stack1.top() as usize,
             0 as usize
         );
 
 
-        hprintln!("sp: {:#x}", sp as usize);
+        hprintln!("sp: {:#x}", sp);
 
         // 切换到线程1
-        rt_hw_context_switch_to(sp as *mut u32);
+        rt_hw_context_switch_to(&sp as *const usize as *mut u32);
     }
     hprintln!("kernel_stack1: switch");
 }

@@ -1,10 +1,11 @@
 //! 线程上下文切换模块
 //! 
-//! 使用内联汇编实现线程上下文保存与恢复
+//! 使用内联汇编实现线程上下文保存与恢复，复用RT-Thread的实现思路
 
+use cortex_m;
+use cortex_m_rt;
 use core::arch::asm;
-use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-
+use core::sync::atomic::{AtomicU32, Ordering};
 use cortex_m_semihosting::hprintln;
 
 // 寄存器常量定义
@@ -14,93 +15,39 @@ const NVIC_SYSPRI2: u32 = 0xE000ED20;       // system priority register (2)
 const NVIC_PENDSV_PRI: u32 = 0xFFFF0000;    // PendSV and SysTick priority value (lowest)
 const NVIC_PENDSVSET: u32 = 0x10000000;     // value to trigger PendSV exception
 
-// 线程切换标志
-pub static THREAD_SWITCH_FLAG: AtomicBool = AtomicBool::new(false);
+// 线程切换标志 - 使用原子类型增强线程安全
+static THREAD_SWITCH_FLAG: AtomicU32 = AtomicU32::new(0);
+static CURRENT_THREAD_SP: AtomicU32 = AtomicU32::new(0);
+static NEXT_THREAD_SP: AtomicU32 = AtomicU32::new(0);
 
-// 当前线程栈指针
-pub static CURRENT_THREAD_SP: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
-
-// 下一个要切换到的线程栈指针
-pub static NEXT_THREAD_SP: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
+// 兼容性导出 - 以便汇编代码引用
+#[unsafe(no_mangle)]
+pub static mut rt_thread_switch_interrupt_flag: u32 = 0;
+#[unsafe(no_mangle)]
+pub static mut rt_interrupt_from_thread: u32 = 0;
+#[unsafe(no_mangle)]
+pub static mut rt_interrupt_to_thread: *mut u32 = 0 as *mut u32;
 
 /// 初始化上下文切换机制
 pub fn init() {
     unsafe {
-        hprintln!("init: set PendSV interrupt priority");
         // 设置PendSV中断为最低优先级
         let nvic_syspri2 = NVIC_SYSPRI2 as *mut u32;
         let temp = core::ptr::read_volatile(nvic_syspri2);
         core::ptr::write_volatile(nvic_syspri2, temp | NVIC_PENDSV_PRI);
-        hprintln!("init: set PendSV interrupt priority done");
-
-        // 确保PendSV中断是使能的
+        
+        // 确保PendSV中断已启用
         let nvic_iser = 0xE000E100 as *mut u32;  // NVIC ISER0
-        core::ptr::write_volatile(nvic_iser, 1 << 14);  // PendSV中断号是14
-        hprintln!("init: enable PendSV interrupt done");
-
-        // 设置向量表偏移
-        let vtor = SCB_VTOR as *mut u32;
-        let vector_table = 0x8000000 as u32;  // Flash起始地址
-        core::ptr::write_volatile(vtor, vector_table);
-        hprintln!("init: set vector table done");
-
-        // 设置中断处理函数地址
-        let handlers = [
-            (2, HardFault_Handler as usize as u32),  // HardFault
-            (3, MemManage_Handler as usize as u32),  // MemManage
-            (4, BusFault_Handler as usize as u32),   // BusFault
-            (5, UsageFault_Handler as usize as u32), // UsageFault
-            (6, 0),                                  // Reserved
-            (7, 0),                                  // Reserved
-            (8, 0),                                  // Reserved
-            (9, 0),                                  // Reserved
-            (10, 0),                                 // Reserved
-            (11, 0),                                 // SVCall
-            (12, 0),                                 // Debug Monitor
-            (13, 0),                                 // Reserved
-            (14, PendSV_Handler as usize as u32),    // PendSV
-            (15, 0),                                 // SysTick
-        ];
-
-        for (index, handler) in handlers.iter() {
-            if *handler != 0 {
-                let vector = (vector_table + *index * 4) as *mut u32;
-                core::ptr::write_volatile(vector, *handler);
-                hprintln!("init: set handler {} at {:#x}", index, vector as usize);
-            }
-        }
-        hprintln!("init: set all handlers done");
-
-        // // 初始化MSP（主栈指针）
-        // let msp = (0x20000000u32).wrapping_add(96 * 1024);  // RAM起始地址 + 128KB
-        // hprintln!("init: setting MSP to {:#x}", msp);
-        // asm!("msr msp, {0}", in(reg) msp);
-        // hprintln!("init: set MSP done");
-
-        // // 初始化PSP（进程栈指针）
-        // let psp = (0x20000000u32).wrapping_add(32 * 1024);  // RAM起始地址 + 64KB
-        // hprintln!("init: setting PSP to {:#x}", psp);
-        // asm!("msr psp, {0}", in(reg) psp);
-        // hprintln!("init: set PSP done");
-
-        // 启用中断
-        hprintln!("init: enabling interrupts");
-        asm!("cpsie f");
-        asm!("cpsie i");
-        hprintln!("init: interrupts enabled");
+        let pendsvbit = 1 << 14;  // PendSV位于位置14
+        let current = core::ptr::read_volatile(nvic_iser);
+        core::ptr::write_volatile(nvic_iser, current | pendsvbit);
+        
+        // 打印调试信息
+        hprintln!("PendSV priority set to lowest and interrupt enabled");
     }
+
 }
 
-/// 触发上下文切换（通过PendSV中断）
-#[inline]
-pub fn trigger_context_switch() {
-    unsafe {
-        hprintln!("trigger_context_switch: {:#x}", NVIC_INT_CTRL as usize);
-        let nvic_int_ctrl = NVIC_INT_CTRL as *mut u32;
-        core::ptr::write_volatile(nvic_int_ctrl, NVIC_PENDSVSET);
-        hprintln!("trigger_context_switch: done");
-    }
-}
 
 /// 线程上下文切换
 /// 
@@ -109,230 +56,273 @@ pub fn trigger_context_switch() {
 /// * `from_sp`: 当前线程的栈指针
 /// * `to_sp`: 目标线程的栈指针
 #[inline]
-pub fn rt_hw_context_switch(from_sp: *mut u32, to_sp: *mut u32) {
-    // 设置线程切换标志
-    THREAD_SWITCH_FLAG.store(true, Ordering::SeqCst);
-    
-    // 设置当前线程和目标线程的栈指针
-    CURRENT_THREAD_SP.store(from_sp, Ordering::SeqCst);
-    NEXT_THREAD_SP.store(to_sp, Ordering::SeqCst);
+pub fn rt_hw_context_switch(from_sp: u32, to_sp: u32) {
+    // 同步更新内部变量和兼容变量
+    update_thread_vars(from_sp, to_sp);
     
     // 触发PendSV中断
-    trigger_context_switch();
+    unsafe {
+        asm!(
+            "ldr r0, ={nvic_int_ctrl}",
+            "ldr r1, ={nvic_pendsvset}",
+            "str r1, [r0]",
+            nvic_int_ctrl = const NVIC_INT_CTRL,
+            nvic_pendsvset = const NVIC_PENDSVSET,
+            out("r0") _,
+            out("r1") _,
+            options(nostack, preserves_flags)
+        );
+    }
 }
 
-/// 中断中的线程上下文切换
-/// 
-/// 与 rt_hw_context_switch 功能相同，但用于中断中的上下文切换
-/// 
-/// # 参数
-/// 
-/// * `from_sp`: 当前线程的栈指针
-/// * `to_sp`: 目标线程的栈指针
+/// 中断中的线程上下文切换 (在Cortex-M4上与普通切换相同)
 #[inline]
-pub fn rt_hw_context_switch_interrupt(from_sp: *mut u32, to_sp: *mut u32) {
-    // 在 Cortex-M4 中，中断中的上下文切换与普通上下文切换相同
+pub fn rt_hw_context_switch_interrupt(from_sp: u32, to_sp: u32) {
     rt_hw_context_switch(from_sp, to_sp)
 }
 
 /// 直接切换到指定线程（不保存当前上下文）
 pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
-    hprintln!("rt_hw_context_switch_to: {:#x}", to_sp as usize);
-    // 设置目标线程的栈指针
-    NEXT_THREAD_SP.store(to_sp, Ordering::SeqCst);
+    // hprintln!("rt_hw_context_switch_to: {:#x}", unsafe { *to_sp });
+    // 设置目标线程指针和标志
+    NEXT_THREAD_SP.store(unsafe { *to_sp }, Ordering::SeqCst);
+    CURRENT_THREAD_SP.store(0, Ordering::SeqCst);
+    THREAD_SWITCH_FLAG.store(1, Ordering::SeqCst);
     
-    // 清除当前线程的栈指针
-    CURRENT_THREAD_SP.store(core::ptr::null_mut(), Ordering::SeqCst);
-    
-    // 设置线程切换标志
-    THREAD_SWITCH_FLAG.store(true, Ordering::SeqCst);
-    
-    // 设置PendSV中断为最低优先级
+    // 同步更新兼容变量
     unsafe {
-        hprintln!("rt_hw_context_switch_to: set PendSV interrupt priority");
+        rt_interrupt_to_thread = to_sp;
+        rt_interrupt_from_thread = 0;
+        rt_thread_switch_interrupt_flag = 1;
+    }
+    // hprintln!("rt_hw_context_switch_to: set PendSV priority and trigger PendSV");
+    // 设置PendSV优先级和触发PendSV
+    unsafe {
+        // hprintln!("rt_hw_context_switch_to: set PendSV priority");
+        // 设置PendSV优先级
         let nvic_syspri2 = NVIC_SYSPRI2 as *mut u32;
         let temp = core::ptr::read_volatile(nvic_syspri2);
         core::ptr::write_volatile(nvic_syspri2, temp | NVIC_PENDSV_PRI);
-        hprintln!("rt_hw_context_switch_to: set PendSV interrupt priority done");
-    }
-    
-    // 触发PendSV中断
-    trigger_context_switch();
-    hprintln!("rt_hw_context_switch_to: trigger PendSV interrupt");
+        
+        // 触发PendSV
+        // hprintln!("rt_hw_context_switch_to: trigger PendSV");
+        // PendSV_Handler();
+        let nvic_int_ctrl = NVIC_INT_CTRL as *mut u32;
+        core::ptr::write_volatile(nvic_int_ctrl, NVIC_PENDSVSET);
 
-    // 恢复MSP（主栈指针）
-    unsafe {
-        hprintln!("rt_hw_context_switch_to: restore MSP");
+        // 恢复MSP
         let vtor = core::ptr::read_volatile(SCB_VTOR as *const u32);
         let reset_sp = core::ptr::read_volatile(vtor as *const u32);
-        asm!("msr msp, {0}", in(reg) reset_sp);
-        hprintln!("rt_hw_context_switch_to: restore MSP done");
+
+        asm!(
+            // 恢复MSP（主栈指针）
+            "msr msp, {0}",
+            
+            // 启用中断
+            "cpsie f",
+            "cpsie i",
+            "dsb",
+            "isb",
+            
+            in(reg) reset_sp
+        );
+        
     }
     
-    // 启用中断
-    unsafe {
-        hprintln!("rt_hw_context_switch_to: enable interrupts");
-        asm!("cpsie f");
-        asm!("cpsie i");
-        asm!("dsb");
-        asm!("isb");
-        hprintln!("rt_hw_context_switch_to: enable interrupts done");
-    }
+    // // 触发PendSV后等待一小段时间，如果没有切换成功，尝试手动调用
+    // let mut timeout_counter = 0;
+    // while THREAD_SWITCH_FLAG.load(Ordering::SeqCst) != 0 {
+    //     timeout_counter += 1;
+    //     if timeout_counter > 100000 {
+    //         hprintln!("PendSV可能没有被正确处理，尝试手动调用");
+    //         unsafe { PendSV_Handler(); }
+    //         break;
+    //     }
+    // }
     
-    // 程序不应该到达这里
+    // 如果到达这里，说明出现了问题
+    hprintln!("ERROR: should not reach here!");
     loop {}
 }
 
-/// PendSV中断处理函数（使用内联汇编实现上下文切换）
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn PendSV_Handler() {
-    // 保存所有寄存器，恢复所有寄存器，完成上下文切换
+/// PendSV中断处理函数 - 进行实际的上下文切换
+#[cortex_m_rt::exception]
+unsafe fn PendSV() -> ! {
+    // hprintln!("PendSV_Handler entered");
+    
     unsafe {
         asm!(
-            // 禁用中断
+            // 保存中断状态
             "mrs r2, PRIMASK",
-            "cpsid i",
+            "cpsid i",      // 关闭中断
             
-            // 获取线程切换标志
-            "ldr r0, ={thread_switch_flag}",
+            // 获取切换标志
+            "ldr r0, =rt_thread_switch_interrupt_flag",
             "ldr r1, [r0]",
-            "cbz r1, 2f", // 如果标志为0，跳转到标签2（退出）
-            
-            // 清除线程切换标志
-            "movs r1, #0",
+            "cbz r1, 2f",         // 如果标志为0，跳到退出
+
+            // 清除切换标志
+            "mov r1, #0",
             "str r1, [r0]",
             
             // 获取当前线程栈指针
-            "ldr r0, ={current_thread_sp}",
+            "ldr r0, =rt_interrupt_from_thread",
             "ldr r1, [r0]",
-            "cbz r1, 1f", // 如果为空，跳转到标签1（切换到目标线程）
+            "cbz r1, 1f",         // 如果为0，跳到恢复目标线程
+
+            // 保存当前线程上下文
+            "mrs r1, psp",        // 获取PSP
             
-            // 获取PSP（进程栈指针）
-            "mrs r1, psp",
-            
-            // 检查是否需要保存FPU寄存器
+            // FPU寄存器保存 (如果需要)
             "tst lr, #0x10",
             "it eq",
-            "vstmdbeq r1!, {{d8-d15}}", // 如果需要，保存FPU寄存器
+            "vstmdbeq r1!, {{d8-d15}}",
             
-            // 保存核心寄存器（r4-r11）
+            // 保存通用寄存器
             "stmfd r1!, {{r4-r11}}",
             
-            // 检查是否需要保存FPU状态
+            // FPU标志保存
+            "mov r4, #0",
             "tst lr, #0x10",
             "it eq",
-            "moveq r4, #1", // FPU标志
-            "it ne",
-            "movne r4, #0",
-            
-            // 保存FPU标志
+            "moveq r4, #1",
             "stmfd r1!, {{r4}}",
             
-            // 更新当前线程栈指针
-            "ldr r0, [r0]",
+            // 更新线程栈指针
             "str r1, [r0]",
-            
-            // 切换到目标线程
             "1:",
-            "ldr r1, ={next_thread_sp}",
-            "ldr r1, [r1]",
-            "ldr r1, [r1]", // 获取目标线程栈值
+        );
+
+        // hprintln!("PendSV_Handler: switch to target thread");
+        asm!(
+            // 切换到目标线程
+            "ldr r1, =rt_interrupt_to_thread",
+            "ldr r1, [r1]",        
+            "ldr r1, [r1]",        // 此时r1保存的是栈顶的地址 
+        );
+        // #[cfg(feature = "fpu")]
+        // asm!(
+        //     // 恢复FPU标志
+        //     "ldmfd r1!, {{r3}}",
+        // );
             
-            // 恢复FPU标志
-            "ldmfd r1!, {{r3}}",
-            
-            // 恢复核心寄存器（r4-r11）
+        asm!(
+            // 恢复通用寄存器
             "ldmfd r1!, {{r4-r11}}",
-            
-            // 如果需要，恢复FPU寄存器
-            "cmp r3, #0",
-            "it ne",
-            "vldmiane r1!, {{d8-d15}}",
-            
+        );
+
+        // #[cfg(feature = "fpu")]
+        // asm!(
+        //     // 恢复FPU寄存器 (如果需要)
+        //     "cmp r3, #0",
+        //     "it ne",
+        //     "vldmiane r1!, {{d8-d15}}",
+        // );
+
+        asm!(
             // 更新PSP
             "msr psp, r1",
             
-            // 处理FPU状态标志
-            "orr lr, lr, #0x10", // 默认清除FPCA位
-            "cmp r3, #0",
-            "it ne",
-            "bicne lr, lr, #0x10", // 如果需要，设置FPCA位
-            
+            // 处理FPU状态
+            // "orr lr, lr, #0x10",  // 默认清除FPCA
+            // "cmp r3, #0",
+            // "it ne",
+            // "bicne lr, lr, #0x10", // 如果需要，设置FPCA
+
             // 退出
             "2:",
-            "msr PRIMASK, r2", // 恢复中断状态
+            "msr PRIMASK, r2",    // 恢复中断状态
             
             // 确保使用PSP返回
             "orr lr, lr, #0x04",
             "bx lr",
             
-            thread_switch_flag = sym THREAD_SWITCH_FLAG,
-            current_thread_sp = sym CURRENT_THREAD_SP,
-            next_thread_sp = sym NEXT_THREAD_SP,
             options(noreturn)
         );
+    }
+}
+
+/// 更新线程变量 - 同时更新原子变量和兼容变量
+fn update_thread_vars(from_sp: u32, to_sp: u32) {
+    let prev_flag = THREAD_SWITCH_FLAG.load(Ordering::SeqCst);
+    
+    // 只有在没有切换进行时才更新from_sp
+    if prev_flag == 0 {
+        THREAD_SWITCH_FLAG.store(1, Ordering::SeqCst);
+        CURRENT_THREAD_SP.store(from_sp, Ordering::SeqCst);
+        
+        // 更新兼容变量
+        unsafe {
+            rt_thread_switch_interrupt_flag = 1;
+            rt_interrupt_from_thread = from_sp;
+        }
+    }
+    
+    // 始终更新to_sp
+    NEXT_THREAD_SP.store(to_sp, Ordering::SeqCst);
+    
+    // 更新兼容变量
+    unsafe {
+        rt_interrupt_to_thread = to_sp as *mut u32;
     }
 }
 
 /// 硬件错误处理函数
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HardFault_Handler() {
+    #[cfg(feature = "debug")]
+    hprintln!("HardFault_Handler entered");
+    
     unsafe {
         asm!(
-            // 获取当前上下文
-            "mrs r0, msp",         // 尝试从MSP获取上下文
-            "tst lr, #4",          // 检查EXC_RETURN[2]
-            "bne 1f",
-            "mrs r0, psp",         // 如果不是MSP，则从PSP获取
-            "1:",
+            // 获取上下文
+            "mrs r0, msp",
+            "tst lr, #4",
+            "it eq",
+            "mrseq r0, psp",
             
-            // 保存r4-r11寄存器
+            // 保存寄存器
             "stmfd r0!, {{r4-r11}}",
-            
-            // 保存LR
             "stmfd r0!, {{lr}}",
             
             // 更新栈指针
-            "tst lr, #4",         // 检查EXC_RETURN[2]
-            "bne 2f",
-            "msr msp, r0",        // 更新MSP
-            "b 3f",
-            "2:",
-            "msr psp, r0",        // 更新PSP
-            "3:",
+            "tst lr, #4",
+            "it eq",
+            "msreq msp, r0",
+            "it ne",
+            "msrne psp, r0",
             
-            // 调用硬件错误处理函数
-            "bl handle_hardfault",
+            // 调用处理函数
+            "bl rt_hw_hard_fault_exception",
             
             // 返回
-            "orr lr, lr, #0x04",  // 确保使用PSP返回
+            "orr lr, lr, #0x04",
             "bx lr",
             
             options(noreturn)
         );
     }
+    hprintln!("HardFault_Handler exited");
 }
 
-/// 硬件错误处理函数
+/// 硬件错误处理实现
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn handle_hardfault() {
-    hprintln!("hardfault");
-    // 在这里添加错误处理逻辑
+pub unsafe extern "C" fn rt_hw_hard_fault_exception(context: *mut core::ffi::c_void) {
+    #[cfg(feature = "debug")]
+    hprintln!("HARDFAULT! System halted.");
+    
     loop {}
 }
 
-// 其他中断处理函数
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn MemManage_Handler() {
-    loop {}
+// Rust友好的接口包装函数
+pub fn context_switch(from_sp: *mut u32, to_sp: *mut u32) {
+    rt_hw_context_switch(from_sp as u32, to_sp as u32)
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn BusFault_Handler() {
-    loop {}
+pub fn context_switch_interrupt(from_sp: *mut u32, to_sp: *mut u32) {
+    rt_hw_context_switch_interrupt(from_sp as u32, to_sp as u32)
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn UsageFault_Handler() {
-    loop {}
+pub fn context_switch_to(to_sp: *mut u32) {
+    rt_hw_context_switch_to(to_sp as *mut u32)
 } 
