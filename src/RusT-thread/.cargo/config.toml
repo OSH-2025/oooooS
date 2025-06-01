@@ -37,7 +37,6 @@ runner = "qemu-system-arm -cpu cortex-m4 -machine netduinoplus2 -nographic -semi
 #runner = "qemu-system-arm -cpu cortex-m4 -machine netduinoplus2 -nographic -semihosting-config enable=on,target=native -gdb tcp::3333 -S -kernel"
 # linker = "arm-none-eabi-gcc"
 
-
 [target.thumbv7m-none-eabi]
 # uncomment this to make `cargo run` execute programs on QEMU
 runner = "qemu-system-arm -cpu cortex-m3 -machine lm3s6965evb -nographic -semihosting-config enable=on,target=native -kernel"

@@ -1,0 +1,6 @@
+# Temporary config for running benchmarks on the host system
+[build]
+target-dir = "target/bench"
+
+[target.x86_64-unknown-linux-gnu]
+runner = "" 

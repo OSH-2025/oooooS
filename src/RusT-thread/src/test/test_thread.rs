@@ -7,14 +7,17 @@ use crate::rtthread::thread::*;
 use crate::context::*;
 use crate::cpuport::*;
 use cortex_m_semihosting::hprintln;
+use core::arch::asm;
 
 
 pub extern "C" fn thread1(arg: usize) -> () {
+    hprintln!("thread1: {}", arg);
     let mut i = 0;
-    loop {
-        i += 1;
-        hprintln!("thread1: {}", i);
-    }
+    hprintln!("thread1: {}", i);
+    // loop {
+    //     i += 1;
+    //     hprintln!("thread1: {}", i);
+    // }
 }
 
 pub extern "C" fn thread2(arg: usize) -> ! {
@@ -23,6 +26,21 @@ pub extern "C" fn thread2(arg: usize) -> ! {
         i += 1;
         hprintln!("thread2: {}", i);
     }
+}
+
+pub fn test_func_pointer() {
+    // print
+    hprintln!("test_func_pointer");
+    let func_ptr = thread1 as usize;
+    hprintln!("func_ptr: {:#x}", func_ptr);
+
+    // try to call the function
+    unsafe {
+        let func: fn(usize) -> () = core::mem::transmute(func_ptr);
+        hprintln!("Calling thread1...");
+        func(12384);
+    }
+    hprintln!("test_func_pointer done");
 }
 
 pub fn test_thread_context_switch() {
@@ -36,18 +54,49 @@ pub fn test_thread_context_switch() {
         let sp = rt_hw_stack_init(
             thread1 as usize,
             0 as *mut u8,
-            kernel_stack1.top() as *mut u8,
+            kernel_stack1.top() as usize,
             0 as usize
         );
 
 
-        hprintln!("sp: {:#x}", sp as usize);
+        hprintln!("sp: {:#x}", sp);
 
         // 切换到线程1
-        rt_hw_context_switch_to(sp as *mut u32);
+        rt_hw_context_switch_to(&sp as *const usize as *mut u32);
     }
     hprintln!("kernel_stack1: switch");
 }
 
 
+pub fn test_thread_context_switch_from_to() {
+    hprintln!("test_thread_context_switch_from_to");
 
+    // 创建线程栈1
+    let kernel_stack1 = KernelStack::new(KERNEL_STACK_SIZE);
+
+    // 创建线程栈2
+    let kernel_stack2 = KernelStack::new(KERNEL_STACK_SIZE);
+
+    // 初始化栈
+    unsafe {
+        let sp1 = rt_hw_stack_init(
+            thread1 as usize,
+            0 as *mut u8,
+            kernel_stack1.top() as usize,
+            0 as usize
+        );
+
+        let sp2 = rt_hw_stack_init(
+            thread2 as usize,
+            0 as *mut u8,
+            kernel_stack2.top() as usize,
+            0 as usize
+        );
+
+        // 切换到线程1
+        rt_hw_context_switch_to(&sp1 as *const usize as *mut u32);
+
+        // 切换到线程2
+        rt_hw_context_switch_to(&sp2 as *const usize as *mut u32);
+    }
+}
