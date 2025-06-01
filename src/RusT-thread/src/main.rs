@@ -63,9 +63,6 @@ fn main() -> ! {
     // 调用 timer.rs 中的 rt_system_timer_init 函数来配置 SysTick
     timer::rt_system_timer_init(syst, &clocks);
 
-    // --- 其他初始化 ---
-    init(); // 内存分配器等初始化
-
     // 运行测试 (如果启用了 feature)
     #[cfg(feature = "test")]
     {
@@ -83,9 +80,8 @@ fn main() -> ! {
         }
         test::run_all_tests();
         hprintln!("Tests finished.");
+        }
     }
-    
-
 
     // --- 应用主循环 ---
     loop {
@@ -98,10 +94,8 @@ fn init() {
     // 内存分配器初始化
     hprintln!("start init...");
     mem::allocator::init_heap();
-    hprintln!("heap init done");
-    context::init();
-    hprintln!("context init done");
-    hprintln!("init done");
+    // context::init(); // 如果需要，初始化上下文
+    // hprintln!("init done");
 }
 
 // --- SysTick 中断处理函数 ---
