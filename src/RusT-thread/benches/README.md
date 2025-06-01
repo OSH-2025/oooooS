@@ -30,17 +30,17 @@ cargo bench --no-default-features --target x86_64-unknown-linux-gnu --bench memo
 ```
 
 ### 终端输出
-基准测试会在终端显示实时结果：
+会有类似的输出结果：
 ```
 allocator_creation/create_allocator/1024
                         time:   [40.502 ns 41.258 ns 42.805 ns]
                         change: [-7.77% -4.05% +2.24%] (p = 0.05 > 0.05)
 ```
 
-结果解释：
-- **time**: `[最小值 平均值 最大值]` 执行时间
-- **change**: 与上次运行的性能变化百分比
-- **outliers**: 异常值数量和类型
+解释：
+- time: `[最小值 平均值 最大值]` 执行时间
+- change: 与上次运行的性能变化百分比
+- outliers: 异常值数量和类型
 
 ### HTML报告位置
 Criterion会自动生成HTML报告：

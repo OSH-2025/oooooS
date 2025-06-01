@@ -12,14 +12,14 @@ use core::fmt::Debug;
 // 异常栈帧
 #[repr(C)]
 pub struct ExceptionStackFrame {
-    pub r0: u32,
+    pub r0: u32,    // 线程入口参数
     pub r1: u32,
     pub r2: u32,
     pub r3: u32,
     pub r12: u32,
-    pub lr: u32,
-    pub pc: u32,
-    pub psr: u32,
+    pub lr: u32,    // 线程退出处理函数
+    pub pc: u32,    // 线程入口函数
+    pub psr: u32,   // xPSR, 必须设置Thumb位
 }
 
 impl Debug for ExceptionStackFrame {
@@ -30,8 +30,8 @@ impl Debug for ExceptionStackFrame {
 
 #[repr(C)]
 pub struct StackFrame {
-    #[cfg(feature = "fpu")] // FPU相关
-    pub flag: u32,
+    #[cfg(feature = "fpu")]
+    pub flag: u32,  // FPU相关
     pub r4: u32,
     pub r5: u32,
     pub r6: u32,
@@ -62,11 +62,11 @@ impl Debug for StackFrame {
 pub unsafe fn rt_hw_stack_init(
     tentry: usize,
     parameter: *mut u8,
-    stack_addr: *mut u8,
+    stack_addr: usize,
     texit: usize,
-) -> *mut usize {
+) -> usize {
     // 栈顶对齐到8字节
-    let mut stk = stack_addr.add(core::mem::size_of::<u32>()) as usize;
+    let mut stk = stack_addr + core::mem::size_of::<u32>();
     stk &= !0x7;
     stk -= core::mem::size_of::<StackFrame>();
 
@@ -96,17 +96,9 @@ pub unsafe fn rt_hw_stack_init(
 
     hprintln!("stack_frame: {:?}", *stack_frame);
 
-    stk as *mut usize
+    stk
 }
 
-
-/* exception and interrupt handler table */
-#[unsafe(no_mangle)]
-pub static mut rt_interrupt_from_thread: u32 = 0;
-#[unsafe(no_mangle)]
-pub static mut rt_interrupt_to_thread: u32 = 0;
-#[unsafe(no_mangle)]
-pub static mut rt_thread_switch_interrupt_flag: u32 = 0;
 
 // 异常钩子
 static mut RT_EXCEPTION_HOOK: Option<unsafe fn(context: *mut core::ffi::c_void) -> i32> = None;
