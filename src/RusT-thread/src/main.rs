@@ -34,17 +34,15 @@ fn main() -> ! {
     init();
     hprintln!("初始化完成");
     
-    // 使用条件编译来包含测试代码
-    #[cfg(feature = "test_small_mem")]
-    {
-        hprintln!("开始小内存管理测试...");
-        test::test_small_mem::run_simple_mem_tests();
-        hprintln!("小内存管理测试完成！");
-    }
-    
-    #[cfg(not(feature = "test_small_mem"))]
-    {
-        hprintln!("未启用测试功能，程序正常运行");
+    if cfg!(feature = "test") {
+            // 使用条件编译来包含测试代码
+        #[cfg(feature = "test_small_mem")]
+        {
+            hprintln!("开始小内存管理测试...");
+            test::test_small_mem::run_simple_mem_tests();
+            hprintln!("小内存管理测试完成！");
+        }
+        test::run_all_tests();
     }
     
     loop {

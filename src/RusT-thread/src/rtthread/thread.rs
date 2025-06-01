@@ -7,6 +7,7 @@ use crate::kservice::RTIntrFreeCell;
 //use crate::rtthread::scheduler;
 //use crate::rtthread::idle;
 //use crate::timer;
+use crate::irq;
 use alloc::boxed::Box;
 use core::fmt::Debug;
 use alloc::sync::Arc;
@@ -16,12 +17,69 @@ use alloc::alloc::{
     Layout,
 };
 use cortex_m_semihosting::hprintln;
+use crate::cpuport::rt_hw_stack_init;
+
+
+
 pub const KERNEL_STACK_SIZE: usize = 0x400;//1kB
+
 
 lazy_static! {
     /// 总的线程列表，用户可从中获取所有线程
     static ref RT_THREAD_LIST: RTIntrFreeCell<Vec<Arc<RtThread>>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
 
+}
+
+pub struct KernelStack {
+    bottom: usize,
+    size: usize,
+}
+
+impl KernelStack {
+    pub fn new(size: usize) -> Self {
+        // hprintln!("KernelStack::new: enter");
+        let bottom = unsafe {
+            alloc(Layout::from_size_align(size, size).unwrap()) as usize
+        };
+        // hprintln!("KernelStack::new: bottom: {}", bottom);
+        KernelStack { bottom, size }
+    }
+
+    pub fn new_empty() -> Self {
+        KernelStack { bottom: 0, size: 0 }
+    }
+
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn bottom(&self) -> usize {
+        self.bottom
+    }
+
+    pub fn top(&self) -> usize {
+        self.bottom + self.size
+    }
+
+    pub fn init(&self,entry: usize,parameter: usize,texit: usize) {
+        unsafe {
+            
+        }
+    }
+}
+
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        if self.bottom != 0 {
+            unsafe {
+                dealloc(
+                    self.bottom as _,
+                    Layout::from_size_align(self.size, self.size).unwrap(),
+                );
+            }
+        }
+    }
 }
 
 pub struct RtThreadInner {
@@ -38,7 +96,7 @@ pub struct RtThreadInner {
     pub number_mask: u32,
 
     /// 线程相关信息
-    pub entry: Box<dyn FnOnce() + Send + Sync + 'static>, // 函数入口
+    pub entry: usize, // 函数入口
 
     /// tick
     pub init_tick: usize,
@@ -49,7 +107,7 @@ pub struct RtThreadInner {
 
     /// context
     pub kernel_stack: KernelStack,
-    pub context: Vec<RtContext>,
+    pub stack_pointer: usize,
 
     /// user data
     pub user_data: usize,
@@ -119,7 +177,17 @@ impl RtContext {
 /// @param priority 线程优先级
 /// @param tick 线程时间片
 /// @return 线程对象
-pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: Box<dyn FnOnce() + Send + Sync + 'static>, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
+pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: usize, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
+    
+    let mut kernel_stack = KernelStack::new(stack_size);
+    let stack_pointer = unsafe {
+        rt_hw_stack_init(
+            entry,
+            0 as *mut u8,
+            kernel_stack.top() as usize,
+            0 as usize
+        )
+    };
     let thread = RtThread {
         name,
         object_type: 0,
@@ -132,69 +200,19 @@ pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: Box<dyn FnOnce
             entry,
             init_tick: tick,
             remaining_tick: tick,
-            kernel_stack: KernelStack::new(stack_size),
-            context: Vec::new(),
+            kernel_stack,
+            stack_pointer,
             user_data: 0,
             })
         },
         cleanup: None,
     };
     let thread_arc = Arc::new(thread);
-    RT_THREAD_LIST.exclusive_access().push(thread_arc.clone()); //todo
+    RT_THREAD_LIST.exclusive_access().push(thread_arc.clone()); 
     thread_arc
 }
 
-pub struct KernelStack {
-    bottom: usize,
-    size: usize,
-}
 
-impl KernelStack {
-    pub fn new(size: usize) -> Self {
-        // hprintln!("KernelStack::new: enter");
-        let bottom = unsafe {
-            alloc(Layout::from_size_align(size, size).unwrap()) as usize
-        };
-        // hprintln!("KernelStack::new: bottom: {}", bottom);
-        KernelStack { bottom, size }
-    }
-
-    pub fn new_empty() -> Self {
-        KernelStack { bottom: 0, size: 0 }
-    }
-
-
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    pub fn bottom(&self) -> usize {
-        self.bottom
-    }
-
-    pub fn top(&self) -> usize {
-        self.bottom + self.size
-    }
-
-    pub fn init(&self,entry: usize,parameter: usize,texit: usize) {
-        unsafe {
-            
-        }
-    }
-}
-
-impl Drop for KernelStack {
-    fn drop(&mut self) {
-        if self.bottom != 0 {
-            unsafe {
-                dealloc(
-                    self.bottom as _,
-                    Layout::from_size_align(self.size, self.size).unwrap(),
-                );
-            }
-        }
-    }
-}
 
 //todo 是否需要完成 初始化静态线程
 
@@ -220,7 +238,7 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
         //schedule::Scheduler::remove_thread(thread.clone()); // todo 尚未定义Scheduler实例
     }
     
-    // todo 这里需要开关中断
+    let level = irq::rt_hw_interrupt_disable();
 
     // 释放timer
     //timer::RtTimer::drop(&thread.inner.exclusive_access().timer); // 应该可以实现吧？
@@ -229,6 +247,7 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
 
     //idle::defunct_thread_enqueue(thread); 
 
+    irq::rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -241,6 +260,8 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
         return RT_ERROR;
     }
     
+    let level = irq::rt_hw_interrupt_disable();
+    
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
 
     // todo 恢复线程
@@ -252,6 +273,7 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
     }
     */
 
+    irq::rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -265,12 +287,13 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
         return RT_ERROR;
     }
 
-    // todo 这里需要开关中断
+    let level = irq::rt_hw_interrupt_disable();
     // schedule::Scheduler::remove_thread(thread.clone()); //todo
     thread.inner.exclusive_access().stat = ThreadState::Suspend; //todo
     
     // timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
 
+    irq::rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -284,7 +307,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
         return RT_ERROR;
     }
 
-    // todo 这里需要开关中断
+    let level = irq::rt_hw_interrupt_disable();
 
     thread.inner.exclusive_access().error = RT_EOK;
 
@@ -294,14 +317,13 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
 
     // timer::rt_timer_start(&thread.inner.exclusive_access().timer);
 
-    // todo 恢复中断
-
     // rt_schedule();
 
     if thread.inner.exclusive_access().error == RT_ETIMEOUT {
         thread.inner.exclusive_access().error = RT_EOK;
     }
 
+    irq::rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -327,3 +349,5 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: *mut c_void) -> Rt
     
 }
 */
+
+
