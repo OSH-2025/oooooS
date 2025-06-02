@@ -65,9 +65,3 @@ pub fn rt_tick_get_millisecond() -> u32 {
         0
     }
 }
-
-
-
-
-
-

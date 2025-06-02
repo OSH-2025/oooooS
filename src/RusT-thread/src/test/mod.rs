@@ -10,6 +10,8 @@ pub mod test_small_mem;
 pub mod test_allocator_compare;
 pub mod test_excp;
 
+#[cfg(feature = "test_timer")]
+pub mod test_timer;
 pub fn run_all_tests() {
     // test_mem::test_vec();
     // test_mem::test_alloc_dealloc();
