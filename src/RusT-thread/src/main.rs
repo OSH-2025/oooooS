@@ -33,7 +33,7 @@ fn main() -> ! {
     init();
     
     if cfg!(feature = "test") {
-            // 使用条件编译来包含测试代码
+        // 使用条件编译来包含测试代码
         #[cfg(feature = "test_small_mem")]
         {
             hprintln!("开始小内存管理测试...");

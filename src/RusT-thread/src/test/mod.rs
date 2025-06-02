@@ -15,4 +15,5 @@ pub fn run_all_tests() {
     // test_mem::test_alloc_dealloc();
     // test_mem::test_box();
     // test_thread::test_thread_context_switch();
+    // test_thread::test_thread_context_switch_from_to();
 }
