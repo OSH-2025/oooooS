@@ -12,26 +12,26 @@ use lazy_static::lazy_static;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 pub extern "C" fn thread1(arg: usize) -> () {
-    hprintln!("thread1: {}", arg);
-    unsafe {
-        let sp1_val = SP1 as u32;
-        let sp2_val = SP2 as u32;
-        hprintln!("sp1_val: {:#x}", sp1_val);
-        hprintln!("sp2_val: {:#x}", sp2_val);
-        // 切换到线程2
-        rt_hw_context_switch(&raw const SP1 as *mut u32, &raw const SP2 as *mut u32);
-    }
+    let mut i = arg;
+    hprintln!("thread1: {}", i);
+    rt_hw_context_switch(&raw const SP1 as *mut u32, &raw const SP2 as *mut u32);
+    i += 1;
+    hprintln!("thread1: {}", i);
+    rt_hw_context_switch(&raw const SP1 as *mut u32, &raw const SP2 as *mut u32);
+    i += 1;
+    hprintln!("thread1: {}", i);
+    rt_hw_context_switch(&raw const SP1 as *mut u32, &raw const SP2 as *mut u32);
 }
 
 pub extern "C" fn thread2(arg: usize) -> () {
-    hprintln!("thread2: {}", arg);
-    unsafe {
-        let sp1_val = SP1 as u32;
-        let sp2_val = SP2 as u32;
-        hprintln!("sp1_val: {:#x}", sp1_val);
-        hprintln!("sp2_val: {:#x}", sp2_val);
-        rt_hw_context_switch(&raw const SP2 as *mut u32, &raw const SP1 as *mut u32);
-    }
+    let mut i = arg;
+    hprintln!("thread2: {}", i);
+    rt_hw_context_switch(&raw const SP2 as *mut u32, &raw const SP1 as *mut u32);
+    i += 1;
+    hprintln!("thread2: {}", i);
+    rt_hw_context_switch(&raw const SP2 as *mut u32, &raw const SP1 as *mut u32);
+    i += 1;
+    hprintln!("thread2: {}", i);
 }
 
 pub fn test_func_pointer() {
