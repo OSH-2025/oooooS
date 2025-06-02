@@ -7,8 +7,9 @@ use crate::kservice::RTIntrFreeCell;
 use crate::rtconfig;
 use alloc::vec::Vec;
 use crate::rtdef::ThreadState;
+use crate::irq;
+use crate::context::{rt_hw_context_switch_to, rt_hw_context_switch};
 
-// 静态变量：一个单例
 lazy_static! {
     /// 调度器
     static ref RT_SCHEDULER: RTIntrFreeCell<Scheduler> = unsafe { RTIntrFreeCell::new(Scheduler::new()) };
@@ -75,6 +76,18 @@ impl ThreadPriorityTable {
         }
     }
 
+    pub fn insert_thread(&mut self, priority: u8, thread: Arc<RtThread>) {
+        self.table[priority as usize].push_back(thread.clone());
+        self.tag_on_priority(priority);
+    }
+
+    pub fn remove_thread_from_priority(&mut self, priority: u8, thread: Arc<RtThread>) {
+        if let Some(index) = self.get_thread_index(thread.clone()) {
+            self.remove_thread(priority, index);
+        }
+    }  
+    
+
     #[cfg(feature = "full_ffs")]
     pub fn get_highest_priority(&self) -> u8 {
         let number = __rt_ffs(self.ready_priority_group) - 1;
@@ -87,24 +100,32 @@ impl ThreadPriorityTable {
     }
     /// 去除priority在ready_priority_group中的标记
     #[cfg(feature = "full_ffs")]
-    fn tag_off_priority(&self, priority: u8) {
-        todo!();
+    fn tag_off_priority(&mut self, priority: u8) {
+        let group = priority >> 3;
+        let bit = priority & 0x07;
+        self.ready_table[group as usize] &= !(1 << bit);
+        if self.ready_table[group as usize] == 0 {
+            self.ready_priority_group &= !(1 << group);
+        }
     }
     /// 设置priority在ready_priority_group中的标记
     #[cfg(feature = "full_ffs")]
-    fn tag_on_priority(&self, priority: u8) {
-        todo!();
+    fn tag_on_priority(&mut self, priority: u8) {
+        let group = priority >> 3;
+        let bit = priority & 0x07;
+        self.ready_table[group as usize] |= 1 << bit;
+        self.ready_priority_group |= 1 << group;
     }
 
     /// 去除priority在ready_priority_group中的标记
     #[cfg(feature = "tiny_ffs")]
-    fn tag_off_priority(&self, priority: u8) {
-        todo!();
+    fn tag_off_priority(&mut self, priority: u8) {
+        self.ready_priority_group &= !(1 << priority);
     }
     /// 设置priority在ready_priority_group中的标记
     #[cfg(feature = "tiny_ffs")]
-    fn tag_on_priority(&self, priority: u8) {
-        todo!();
+    fn tag_on_priority(&mut self, priority: u8) {
+        self.ready_priority_group |= 1 << priority;
     }
 }
 
@@ -127,8 +148,17 @@ impl Scheduler {
         }
     }
     /// 切换到线程
-    fn switch_to_thread(&mut self, thread: Option<Arc<RtThread>>) {
-        todo!()
+    fn switch_to_thread(&mut self, thread: Arc<RtThread>) {
+        let stack_pointer = thread.inner.exclusive_access().stack_pointer;
+        rt_hw_context_switch_to(&stack_pointer as *const usize as *mut u32);          
+    }
+
+    fn switch_to_thread_from_to(&mut self, from_thread: Arc<RtThread>, to_thread: Arc<RtThread>) {
+        let from_stack_pointer = from_thread.inner.exclusive_access().stack_pointer;
+        let to_stack_pointer = to_thread.inner.exclusive_access().stack_pointer;
+
+        rt_hw_context_switch(&from_stack_pointer as *const usize as *mut u32, &to_stack_pointer as *const usize as *mut u32);
+        
     }
    
 
@@ -142,19 +172,18 @@ impl Scheduler {
         if self.current_thread.is_some() {
             // 设置线程状态为运行
             self.current_thread.as_ref().unwrap().inner.exclusive_access().stat = ThreadState::Running;
+            // 切换到最高优先级的线程
+            self.switch_to_thread(self.current_thread.clone().unwrap());
         }
-
-        // 切换到最高优先级的线程
-        self.switch_to_thread(self.current_thread.clone());
     }
     /// 调度
     pub fn schedule(&mut self) {
         // 关中断
-        todo!("schedule: 关中断");
+        let level = irq::rt_hw_interrupt_disable();
 
         // 检查锁嵌套计数
         if self.lock_nest > 0 {
-            todo!("schedule: 开中断");
+            irq::rt_hw_interrupt_enable(level);
             return;
         }
 
@@ -192,7 +221,7 @@ impl Scheduler {
                 }
             }
 
-            if to_thread != self.current_thread.unwrap() {
+            if to_thread != self.current_thread.clone().unwrap() {
                 // 需要切换线程
                 self.current_priority = priority;
                 let from_thread = self.current_thread.take();
@@ -210,17 +239,16 @@ impl Scheduler {
                 to_thread.inner.exclusive_access().stat = ThreadState::Running;
 
                 // 执行线程切换
-                todo!("schedule: 执行线程切换");
-                // if crate::kservice::interrupt::get_nest() == 0 {
-                //     // 在非中断环境下切换
-                //     self.switch_to_thread(from_thread);
-                //     // 开中断
-                //     todo!("schedule: 开中断");
-                //     return;
-                // } else {
-                //     // 在中断环境下切换
-                //     self.switch_to_thread(from_thread);
-                // }
+                if irq::rt_interrupt_get_nest() == 0 {
+                    // 在非中断环境下切换
+                    self.switch_to_thread_from_to(from_thread.clone().unwrap(), to_thread.clone());
+                    // 开中断
+                    irq::rt_hw_interrupt_enable(level);
+                    return;
+                } else {
+                    // 在中断环境下切换
+                    self.switch_to_thread_from_to(from_thread.clone().unwrap(), to_thread.clone());
+                }
             } else {
                 // 不需要切换线程，但需要更新状态
                 to_thread.inner.exclusive_access().stat = ThreadState::Running;
@@ -228,7 +256,7 @@ impl Scheduler {
         }
 
         // 开中断
-        todo!("schedule: 开中断");
+        irq::rt_hw_interrupt_enable(level);
     }
 
     pub fn lock(&mut self) {
@@ -239,6 +267,10 @@ impl Scheduler {
         self.lock_nest -= 1;
     }
 }
+
+
+
+
 
 /// ffs
 ///
