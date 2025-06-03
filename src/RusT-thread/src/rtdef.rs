@@ -90,6 +90,8 @@ pub const RT_THREAD_SUSPEND: u8 = 0x02;
 pub const RT_THREAD_RUNNING: u8 = 0x03;
 pub const RT_THREAD_CLOSE: u8 = 0x04;
 pub const RT_THREAD_STAT_MASK: u8 = 0x07;
+pub const RT_THREAD_STAT_YIELD: u8 = 0x08;
+pub const RT_THREAD_STAT_YIELD_MASK: u8 = RT_THREAD_STAT_YIELD;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ThreadState {
@@ -150,6 +152,20 @@ impl ThreadState {
         let value = *self as u8;
         value & (Self::SignalMask as u8)
     }
+
+    // 与
+    pub fn and_signal(&mut self, signal: u8) {
+        let value = *self as u8;
+        *self = unsafe { core::mem::transmute(value & signal) };
+    }
+
+    // 或
+    pub fn or_signal(&mut self, signal: u8) {
+        let value = *self as u8;
+        *self = unsafe { core::mem::transmute(value | signal) };
+    }
+    
+    
 
 }
 /// 线程控制命令

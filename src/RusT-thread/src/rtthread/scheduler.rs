@@ -76,12 +76,14 @@ impl ThreadPriorityTable {
         }
     }
 
-    pub fn insert_thread(&mut self, priority: u8, thread: Arc<RtThread>) {
+    pub fn insert_thread(&mut self, thread: Arc<RtThread>) {
+        let priority = thread.inner.exclusive_access().current_priority;
         self.table[priority as usize].push_back(thread.clone());
         self.tag_on_priority(priority);
     }
 
-    pub fn remove_thread_from_priority(&mut self, priority: u8, thread: Arc<RtThread>) {
+    pub fn remove_thread_from_priority(&mut self,thread: Arc<RtThread>) {
+        let priority = thread.inner.exclusive_access().current_priority;
         if let Some(index) = self.get_thread_index(thread.clone()) {
             self.remove_thread(priority, index);
         }
@@ -266,6 +268,10 @@ impl Scheduler {
     pub fn unlock(&mut self) {
         self.lock_nest -= 1;
     }
+
+    pub fn get_current_thread(&self) -> Option<Arc<RtThread>> {
+        self.current_thread.clone()
+    }
 }
 
 
@@ -352,3 +358,19 @@ pub fn __rt_ffs(value: u32) -> u8 {
     return __LOWEST_BIT_BITMAP[(value & 0xff000000) >> 24] + 25;
 }
 
+
+pub fn remove_thread(thread: Arc<RtThread>) {
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread_from_priority(thread);
+}
+
+pub fn insert_thread(thread: Arc<RtThread>) {
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().insert_thread(thread);
+}
+
+pub fn get_current_thread() -> Arc<RtThread> {
+    RT_SCHEDULER.exclusive_access().get_current_thread().unwrap()
+}
+
+pub fn rt_schedule(){
+    RT_SCHEDULER.exclusive_access().schedule();
+}
