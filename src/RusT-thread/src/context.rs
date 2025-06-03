@@ -1,11 +1,10 @@
 //! 线程上下文切换模块
 //! 
-//! 使用内联汇编实现线程上下文保存与恢复，复用RT-Thread的实现思路
+//! 使用内联汇编实现线程上下文保存与恢复
 
 use cortex_m;
 use cortex_m_rt;
 use core::arch::asm;
-use core::sync::atomic::{AtomicU32, Ordering};
 use cortex_m_semihosting::hprintln;
 
 // 寄存器常量定义
@@ -15,18 +14,13 @@ const NVIC_SYSPRI2: u32 = 0xE000ED20;       // system priority register (2)
 const NVIC_PENDSV_PRI: u32 = 0xFFFF0000;    // PendSV and SysTick priority value (lowest)
 const NVIC_PENDSVSET: u32 = 0x10000000;     // value to trigger PendSV exception
 
-// 线程切换标志 - 使用原子类型增强线程安全
-// static THREAD_SWITCH_FLAG: AtomicU32 = AtomicU32::new(0);
-static CURRENT_THREAD_SP: AtomicU32 = AtomicU32::new(0);
-static NEXT_THREAD_SP: AtomicU32 = AtomicU32::new(0);
-
 // 兼容性导出 - 以便汇编代码引用
 #[unsafe(no_mangle)]
-pub static mut rt_thread_switch_interrupt_flag: u32 = 0;
+pub static mut SWITCH_FLAG: u32 = 0;
 #[unsafe(no_mangle)]
-pub static mut rt_interrupt_from_thread: *mut u32 = 0 as *mut u32;
+pub static mut SWITCH_FROM_THREAD: *mut u32 = 0 as *mut u32;
 #[unsafe(no_mangle)]
-pub static mut rt_interrupt_to_thread: *mut u32 = 0 as *mut u32;
+pub static mut SWITCH_TO_THREAD: *mut u32 = 0 as *mut u32;
 
 /// 初始化上下文切换机制
 pub fn init() {
@@ -41,11 +35,8 @@ pub fn init() {
         let pendsvbit = 1 << 14;  // PendSV位于位置14
         let current = core::ptr::read_volatile(nvic_iser);
         core::ptr::write_volatile(nvic_iser, current | pendsvbit);
-        
     }
-
 }
-
 
 /// 线程上下文切换
 /// 
@@ -55,7 +46,6 @@ pub fn init() {
 /// * `to_sp`: 目标线程的栈指针
 #[inline]
 pub fn rt_hw_context_switch(from_sp: *mut u32, to_sp: *mut u32) {
-    // hprintln!("rt_hw_context_switch: from_sp: {:#x}, to_sp: {:#x}", unsafe { *from_sp }, unsafe { *to_sp });
     // 同步更新内部变量和兼容变量
     update_thread_vars(from_sp, to_sp);
     
@@ -83,16 +73,12 @@ pub fn rt_hw_context_switch_interrupt(from_sp: *mut u32, to_sp: *mut u32) {
 /// 直接切换到指定线程（不保存当前上下文）
 pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
     // 设置目标线程指针和标志
-    NEXT_THREAD_SP.store(unsafe { *to_sp }, Ordering::SeqCst);
-    CURRENT_THREAD_SP.store(0, Ordering::SeqCst);
-    // THREAD_SWITCH_FLAG.store(1, Ordering::SeqCst);
-    
-    // 同步更新兼容变量
     unsafe {
-        rt_interrupt_to_thread = to_sp;
-        rt_interrupt_from_thread = 0 as *mut u32;
-        rt_thread_switch_interrupt_flag = 1;
+        SWITCH_TO_THREAD = to_sp;
+        SWITCH_FROM_THREAD = 0 as *mut u32;
+        SWITCH_FLAG = 1;
     }
+
     // 设置PendSV优先级和触发PendSV
     unsafe {
         // 设置PendSV优先级
@@ -120,7 +106,6 @@ pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
             
             in(reg) reset_sp
         );
-        
     }
         
     // 如果到达这里，说明出现了问题
@@ -131,10 +116,8 @@ pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
 /// PendSV中断处理函数 - 进行实际的上下文切换
 #[cortex_m_rt::exception]
 unsafe fn PendSV()  {
-
     // 保存编译器的帧指针
     let saved_r7: u32;
-    let r0: u32;
     unsafe {
         asm!(
             "mov {0}, r7",
@@ -149,7 +132,7 @@ unsafe fn PendSV()  {
             "cpsid i",      // 关闭中断
             
             // 获取切换标志
-            "ldr r0, =rt_thread_switch_interrupt_flag",
+            "ldr r0, =SWITCH_FLAG",
             "ldr r1, [r0]",
             "cbz r1, 2f",         // 如果标志为0，跳到退出
 
@@ -158,7 +141,7 @@ unsafe fn PendSV()  {
             "str r1, [r0]",
             
             // 获取当前线程栈指针
-            "ldr r0, =rt_interrupt_from_thread",
+            "ldr r0, =SWITCH_FROM_THREAD",
             "ldr r1, [r0]",    
             "cbz r1, 1f",         // 如果为0，跳到恢复目标线程
             "ldr r1, [r1]",
@@ -197,7 +180,7 @@ unsafe fn PendSV()  {
 
             // 切换到目标线程
             "1:",
-            "ldr r1, =rt_interrupt_to_thread",
+            "ldr r1, =SWITCH_TO_THREAD",
             "ldr r1, [r1]",        
             "ldr r1, [r1]",        // 此时r1保存的是栈顶的地址 
 
@@ -259,30 +242,21 @@ unsafe fn PendSV()  {
 
 /// 更新线程变量 - 同时更新原子变量和兼容变量
 fn update_thread_vars(from_sp: *mut u32, to_sp: *mut u32) {
-    // let prev_flag = THREAD_SWITCH_FLAG.load(Ordering::SeqCst);
     let prev_flag: u32;
     unsafe {
-        prev_flag = rt_thread_switch_interrupt_flag;
+        prev_flag = SWITCH_FLAG;
     }
     // 只有在没有切换进行时才更新from_sp
     if prev_flag == 0 {
-        // THREAD_SWITCH_FLAG.store(1, Ordering::SeqCst);
-        CURRENT_THREAD_SP.store(unsafe { *from_sp }, Ordering::SeqCst);
-        
-        // 更新兼容变量
         unsafe {
-            rt_thread_switch_interrupt_flag = 1;
-            rt_interrupt_from_thread = from_sp;
-            // hprintln!("update_thread_vars: from_sp: {:#x}", from_sp);
+            SWITCH_FLAG = 1;
+            SWITCH_FROM_THREAD = from_sp;
         }
     }
     
     // 始终更新to_sp
-    NEXT_THREAD_SP.store(unsafe { *to_sp }, Ordering::SeqCst);
-    
-    // 更新兼容变量
     unsafe {
-        rt_interrupt_to_thread = to_sp;
+        SWITCH_TO_THREAD = to_sp;
     }
 }
 

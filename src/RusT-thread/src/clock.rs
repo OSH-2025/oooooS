@@ -5,6 +5,8 @@ use crate::rtconfig::RT_TICK_PER_SECOND;
 use crate::irq::rt_hw_interrupt_disable;
 use crate::irq::rt_hw_interrupt_enable;
 use crate::timer::rt_timer_check;
+//调试
+// use cortex_m_semihosting::hprintln;
 
 // 线程让出标志
 pub const RT_THREAD_STAT_YIELD: u8 = 0x08;
@@ -43,6 +45,8 @@ pub fn rt_tick_increase() {
     rt_hw_interrupt_enable(level);
     // 检查定时器
     rt_timer_check();
+    //调试，输出当前时钟周期
+    // hprintln!("Current tick: {}", rt_tick_get());
 }
 
 // 将毫秒转换为时钟周期

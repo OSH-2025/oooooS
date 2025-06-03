@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(warnings)]
 
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
