@@ -36,6 +36,8 @@ pub struct KernelStack {
 
 impl KernelStack {
     pub fn new(size: usize) -> Self {
+        // ! fixme:功能不稳定：若size = 200 时会停在Alloc。
+        // ! size = 1024可正常工作。
         // hprintln!("KernelStack::new: enter");
         let bottom = unsafe {
             alloc(Layout::from_size_align(size, size).unwrap()) as usize
@@ -138,21 +140,17 @@ impl PartialEq for RtThread {
 
 impl Debug for RtThread {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let name_str = core::str::from_utf8(&self.name)
+            .unwrap_or("invalid utf8")
+            .trim_end_matches('\0');
         f.debug_struct("RtThread")
-            .field("name", &self.name)
+            .field("name", &name_str)
             .field("object_type", &self.object_type)
-            .field("inner", &"<RTIntrFreeCell<RtThreadInner>>")
-            .field("cleanup", &"<function>")
             .finish()
     }
 }
 
 
-impl RtThread {
-    //todo: 线程创建、线程添加、线程删除、线程启动、线程挂起、线程恢复、线程等待、线程唤醒、线程退出、线程调度、线程优先级、线程栈
-
-
-}
 /// 上下文，用于线程切换
 #[derive(Debug)]
 pub struct RtContext{
@@ -180,7 +178,7 @@ impl RtContext {
 /// @param tick 线程时间片
 /// @return 线程对象
 pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
-    
+    // hprintln!("in rt_thread_create:");
     let mut kernel_stack = KernelStack::new(stack_size);
     let stack_pointer = unsafe {
         rt_hw_stack_init(
@@ -192,25 +190,29 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     };
     let name_bytes = name.as_bytes();
     let len = name_bytes.len().min(rtconfig::RT_NAME_MAX);
+    let timer = Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0)));
+    let inner =unsafe {
+        RTIntrFreeCell::new(RtThreadInner {
+        error: 0,
+        stat: ThreadState::Init,
+        current_priority: priority,
+        number_mask: 0,
+        high_mask: 0,
+        entry,
+        init_tick: tick,
+        remaining_tick: tick,
+        kernel_stack,
+        stack_pointer,
+        user_data: 0,
+        timer,
+        })
+    };
+    let mut name = [0u8; rtconfig::RT_NAME_MAX];
+    name[..len].copy_from_slice(&name_bytes[..len]);
     let thread = RtThread {
-        name: name_bytes[..len].try_into().unwrap(),
+        name,
         object_type: 0,
-        inner: unsafe {
-            RTIntrFreeCell::new(RtThreadInner {
-            error: 0,
-            stat: ThreadState::Init,
-            current_priority: priority,
-            number_mask: 0,
-            high_mask: 0,
-            entry,
-            init_tick: tick,
-            remaining_tick: tick,
-            kernel_stack,
-            stack_pointer,
-            user_data: 0,
-            timer: Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0))),
-            })
-        },
+        inner,
         cleanup: None,
     };
     let thread_arc = Arc::new(thread);

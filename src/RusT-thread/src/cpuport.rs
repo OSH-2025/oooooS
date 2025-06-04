@@ -94,7 +94,7 @@ pub unsafe fn rt_hw_stack_init(
         (*stack_frame).flag = 0;
     }
 
-    hprintln!("stack_frame: {:?}", *stack_frame);
+    // hprintln!("stack_frame: {:?}", *stack_frame);
 
     stk
 }
