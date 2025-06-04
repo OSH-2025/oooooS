@@ -45,7 +45,7 @@ pub fn rt_tick_increase() {
     rt_hw_interrupt_enable(level);
     // 检查定时器
     rt_timer_check();
-    //调试，输出当前时钟周期
+    //调试，输出当前时钟周期 
     // hprintln!("Current tick: {}", rt_tick_get());
 }
 
