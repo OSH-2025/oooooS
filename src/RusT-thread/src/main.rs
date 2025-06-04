@@ -61,19 +61,19 @@ fn main() -> ! {
     init();
     
     if cfg!(feature = "test") {
-        // 使用条件编译来包含测试代码
-        #[cfg(feature = "test_small_mem")]
-        {
-            hprintln!("开始小内存管理测试...");
-            test::test_small_mem::run_simple_mem_tests();
-            hprintln!("小内存管理测试完成！");
-        }
-        #[cfg(feature = "test_timer")]
-        {
-            hprintln!("开始定时器测试...");
-            test::test_timer::run_all_timer_tests();
-            hprintln!("定时器测试完成！");
-        }
+        // ! 已迁移至 test/mod.rs 中
+        // #[cfg(feature = "test_small_mem")]
+        // {
+        //     hprintln!("开始小内存管理测试...");
+        //     test::test_small_mem::run_simple_mem_tests();
+        //     hprintln!("小内存管理测试完成！");
+        // }
+        // #[cfg(feature = "test_timer")]
+        // {
+        //     hprintln!("开始定时器测试...");
+        //     test::test_timer::run_all_timer_tests();
+        //     hprintln!("定时器测试完成！");
+        // }
         test::run_all_tests();
         hprintln!("Tests finished.");
     }
@@ -87,10 +87,7 @@ fn main() -> ! {
 
 fn init() {
     // 内存分配器初始化
-    hprintln!("start init...");
     mem::allocator::init_heap();
-    // context::init(); // 如果需要，初始化上下文
-    // hprintln!("init done");
 }
 
 // --- SysTick 中断处理函数 ---
@@ -110,5 +107,5 @@ unsafe fn SysTick() {
 // ! 推荐的测试方式是单独写一个测试文件，
 // ! 例如 `test_xxx.rs`，然后在 `Cargo.toml` 中添加对应的测试条件编译
 // ! 例如 test_xxx = []
-// ! 在main.rs中使用 `#[cfg(test_xxx)]` 来包含测试代码。
+// ! 在test/mod.rs中使用 `#[cfg(test_xxx)]` 来包含测试代码。
 // ! 这样可以避免在主程序中引入测试代码，保持代码的整洁性和可维护性。

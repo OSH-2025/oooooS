@@ -9,6 +9,7 @@ use alloc::vec::Vec;
 use crate::rtdef::ThreadState;
 use crate::irq;
 use crate::context::{rt_hw_context_switch_to, rt_hw_context_switch};
+use cortex_m_semihosting::hprintln;
 
 lazy_static! {
     /// 调度器
@@ -68,7 +69,7 @@ impl ThreadPriorityTable {
         self.table[priority as usize].pop_front()
     }
 
-    pub fn remove_thread(&mut self, priority: u8, index: usize) {
+    pub fn remove_thread_by_id(&mut self, priority: u8, index: usize) {
         self.table[priority as usize].remove(index);
         // 若优先级表为空，需更新就绪优先级组
         if self.table[priority as usize].is_empty() {
@@ -76,14 +77,16 @@ impl ThreadPriorityTable {
         }
     }
 
-    pub fn insert_thread(&mut self, priority: u8, thread: Arc<RtThread>) {
+    pub fn insert_thread(&mut self, thread: Arc<RtThread>) {
+        let priority = thread.inner.exclusive_access().current_priority;
         self.table[priority as usize].push_back(thread.clone());
         self.tag_on_priority(priority);
     }
 
-    pub fn remove_thread_from_priority(&mut self, priority: u8, thread: Arc<RtThread>) {
+    pub fn remove_thread(&mut self,thread: Arc<RtThread>) {
+        let priority = thread.inner.exclusive_access().current_priority;
         if let Some(index) = self.get_thread_index(thread.clone()) {
-            self.remove_thread(priority, index);
+            self.remove_thread_by_id(priority, index);
         }
     }  
     
@@ -266,6 +269,10 @@ impl Scheduler {
     pub fn unlock(&mut self) {
         self.lock_nest -= 1;
     }
+
+    pub fn get_current_thread(&self) -> Option<Arc<RtThread>> {
+        self.current_thread.clone()
+    }
 }
 
 
@@ -351,4 +358,49 @@ pub fn __rt_ffs(value: u32) -> u8 {
 
     return __LOWEST_BIT_BITMAP[(value & 0xff000000) >> 24] + 25;
 }
+
+
+pub fn remove_thread(thread: Arc<RtThread>) {
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(thread);
+}
+
+pub fn insert_thread(thread: Arc<RtThread>) {
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().insert_thread(thread);
+}
+
+pub fn get_current_thread() -> Arc<RtThread> {
+    RT_SCHEDULER.exclusive_access().get_current_thread().unwrap()
+}
+
+pub fn rt_schedule(){
+    RT_SCHEDULER.exclusive_access().schedule();
+}
+
+pub fn rt_schedule_start(){
+    RT_SCHEDULER.exclusive_access().start();
+}
+
+pub fn get_highest_priority() -> u8 {
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority()
+}
+
+pub fn get_highest_priority_thread() -> Arc<RtThread> {
+    let priority = get_highest_priority();
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority).unwrap()
+}
+
+#[cfg(feature = "test")]
+pub fn output_priority_table(){
+    let priority_table = RT_THREAD_PRIORITY_TABLE.exclusive_access();
+    hprintln!("bitmap:");
+    hprintln!("{:08b}\n",&priority_table.ready_priority_group);
+
+
+    hprintln!("priority table:");
+
+    for i in 0..rtconfig::RT_THREAD_PRIORITY_MAX {
+        hprintln!("priority: {}, thread: {:?}", i, priority_table.get_thread(i as u8));
+    }
+}
+
 
