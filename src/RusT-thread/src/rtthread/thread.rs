@@ -8,6 +8,7 @@ use crate::rtthread::scheduler;
 use core::ffi::c_void;
 // use crate::rtthread::idle;
 use crate::timer;
+use spin::Mutex;
 use crate::irq;
 use alloc::boxed::Box;
 use core::fmt::Debug;
@@ -104,7 +105,7 @@ pub struct RtThreadInner {
     pub remaining_tick: usize,
 
     /// timer
-    // pub timer: timer::TimerHandle,
+    pub timer: timer::TimerHandle,
 
     /// context
     pub kernel_stack: KernelStack,
@@ -178,7 +179,7 @@ impl RtContext {
 /// @param priority 线程优先级
 /// @param tick 线程时间片
 /// @return 线程对象
-pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: usize, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
+pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
     
     let mut kernel_stack = KernelStack::new(stack_size);
     let stack_pointer = unsafe {
@@ -189,8 +190,10 @@ pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: usize, stack_s
             0 as usize
         )
     };
+    let name_bytes = name.as_bytes();
+    let len = name_bytes.len().min(rtconfig::RT_NAME_MAX);
     let thread = RtThread {
-        name,
+        name: name_bytes[..len].try_into().unwrap(),
         object_type: 0,
         inner: unsafe {
             RTIntrFreeCell::new(RtThreadInner {
@@ -205,13 +208,13 @@ pub fn rt_thread_create(name: [u8; rtconfig::RT_NAME_MAX], entry: usize, stack_s
             kernel_stack,
             stack_pointer,
             user_data: 0,
-            // timer: timer::TimerHandle::new(timer::RtTimer::new(name,0,0,None,0,0,0)),
+            timer: Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0))),
             })
         },
         cleanup: None,
     };
     let thread_arc = Arc::new(thread);
-    // timer::rt_timer_start(thread_arc.clone().inner.exclusive_access().timer.clone());
+    timer::rt_timer_start(thread_arc.clone().inner.exclusive_access().timer.clone());
     RT_THREAD_LIST.exclusive_access().push(thread_arc.clone()); 
     thread_arc
 }
@@ -261,8 +264,7 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
     
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
 
-    // todo 恢复线程
-    // rt_thread_resume(thread.clone()); 
+    rt_thread_resume(thread.clone()); 
 
     /*
     if rt_thread_self() != RT_NULL {
@@ -289,7 +291,7 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     scheduler::remove_thread(thread.clone());
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
     
-    // timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
+    timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
 
     irq::rt_hw_interrupt_enable(level);
     RT_EOK
@@ -311,9 +313,11 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
 
     rt_thread_suspend(thread.clone());
 
-    // timer::rt_timer_control(&thread.inner.exclusive_access().timer, 1, &tick as *const usize as *mut c_void);
-
-    // timer::rt_timer_start(&thread.inner.exclusive_access().timer);
+    // todo 这里极可能有问题
+    let timer_control_cmd = timer::TimerControlCmd::SetTime(tick as u32);
+    timer::rt_timer_control(&thread.inner.exclusive_access().timer, timer_control_cmd);
+    
+    timer::rt_timer_start(thread.inner.exclusive_access().timer.clone());
 
     scheduler::rt_schedule();
 
@@ -378,7 +382,7 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
     }
 
     let level = irq::rt_hw_interrupt_disable();
-    // todo RT_THREAD_LIST.remove(thread.clone());未实现
+    // todo RT_THREAD_LIST.remove(thread.clone());未实现，可能不需要实现
     scheduler::insert_thread(thread.clone());
     irq::rt_hw_interrupt_enable(level);
     RT_EOK
