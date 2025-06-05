@@ -188,6 +188,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
             0 as usize
         )
     };
+    // hprintln!("stack_pointer in rt_thread_create: {:x}", stack_pointer.clone());
     let name_bytes = name.as_bytes();
     let len = name_bytes.len().min(rtconfig::RT_NAME_MAX);
     let timer = Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0)));
