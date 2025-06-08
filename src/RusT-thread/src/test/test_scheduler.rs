@@ -11,7 +11,7 @@ pub extern "C" fn thread1_enter(arg: usize) -> () {
     loop {
         i += 1;
         hprintln!("thread1: {}", i);
-        if i > 10000 {
+        if i > 10 {
             rt_schedule();
             break;
         }
@@ -24,6 +24,10 @@ pub extern "C" fn thread2_enter(arg: usize) -> () {
     loop {
         i += 1;
         hprintln!("thread2: {}", i);
+        if i > 10 {
+            rt_schedule();
+            break;
+        }
     }
 }
 // test1： 线程插入与删除
@@ -90,6 +94,6 @@ pub fn test_schedule(){
     rt_schedule_start();
 
     // schedule
-    rt_schedule();
+    // rt_schedule();
 
 }
