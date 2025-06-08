@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 extern crate alloc;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
-use crate::kservice::{RTIntrFreeCell,FreeCell};
+use crate::kservice::RTIntrFreeCell;
 use crate::rtconfig;
 use alloc::vec::Vec;
 use crate::rtdef::ThreadState;
@@ -13,7 +13,7 @@ use cortex_m_semihosting::{hprintln, hprint};
 
 lazy_static! {
     /// 调度器
-    static ref RT_SCHEDULER: FreeCell<Scheduler> = unsafe { FreeCell::new(Scheduler::new()) };
+    static ref RT_SCHEDULER: RTIntrFreeCell<Scheduler> = unsafe { RTIntrFreeCell::new(Scheduler::new()) };
     /// 就绪优先级表
     static ref RT_THREAD_PRIORITY_TABLE: RTIntrFreeCell<ThreadPriorityTable> = unsafe { 
         RTIntrFreeCell::new(ThreadPriorityTable::new()) 
@@ -258,10 +258,10 @@ pub fn rt_schedule() {
 
     // 检查锁嵌套计数
     {
-        hprintln!("check lock_nest");
+        // hprintln!("check lock_nest");
         let mut scheduler = RT_SCHEDULER.exclusive_access();
         if scheduler.lock_nest > 0 {
-            hprintln!("lock_nest > 0");
+            hprintln!("schedule: lock_nest > 0");
             irq::rt_hw_interrupt_enable(level);
             return;
         }
