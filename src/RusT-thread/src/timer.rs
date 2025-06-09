@@ -186,7 +186,7 @@ pub fn rt_timer_control(timer: &TimerHandle, cmd: TimerControlCmd) {
 }
 
 /// 检查所有定时器，处理超时事件
-pub fn rt_timer_check() {
+pub fn rt_timer_check() { 
     let mut expired_timers: Vec<TimerHandle> = Vec::new();
     let level = rt_hw_interrupt_disable();
     let current_tick = rt_tick_get();
