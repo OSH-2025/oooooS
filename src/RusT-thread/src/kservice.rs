@@ -22,7 +22,7 @@ use core::ops::{Deref, DerefMut};
 use lazy_static::*;
 use cortex_m_rt::{exception,ExceptionFrame};
 use cortex_m_semihosting::hprintln;
-
+use crate::irq::{rt_hw_interrupt_disable, rt_hw_interrupt_enable, rt_interrupt_get_nest};
 
 
 /// 中断安全的FreeCell
@@ -44,7 +44,10 @@ pub struct RTIntrFreeCell<T> {
 
 unsafe impl<T> Sync for RTIntrFreeCell<T> {}
 
-pub struct RTIntrRefMut<'a, T>(Option<RefMut<'a, T>>);
+pub struct RTIntrRefMut<'a, T> {
+    inner: Option<RefMut<'a, T>>,
+    level: u32,
+}
 
 impl<T> RTIntrFreeCell<T> {
     pub unsafe fn new(value: T) -> Self {
@@ -55,8 +58,12 @@ impl<T> RTIntrFreeCell<T> {
 
     /// Panic if the data has been borrowed.
     pub fn exclusive_access(&self) -> RTIntrRefMut<'_, T> {
-        // TODO：Interrupt_disable
-        RTIntrRefMut(Some(self.inner.borrow_mut()))
+        let level = rt_hw_interrupt_disable();
+        // let level = 0;
+        RTIntrRefMut {
+            inner: Some(self.inner.borrow_mut()),
+            level,
+        }
     }
 
     pub fn exclusive_session<F, V>(&self, f: F) -> V
@@ -70,20 +77,21 @@ impl<T> RTIntrFreeCell<T> {
 
 impl<'a, T> Drop for RTIntrRefMut<'a, T> {
     fn drop(&mut self) {
-        self.0 = None;
-        // TODO：Interrupt_enable
+        self.inner = None;
+        rt_hw_interrupt_enable(self.level);
     }
 }
 
 impl<'a, T> Deref for RTIntrRefMut<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        self.0.as_ref().unwrap().deref()
+        self.inner.as_ref().unwrap().deref()
     }
 }
+
 impl<'a, T> DerefMut for RTIntrRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.as_mut().unwrap().deref_mut()
+        self.inner.as_mut().unwrap().deref_mut()
     }
 }
 

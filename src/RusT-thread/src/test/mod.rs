@@ -3,6 +3,7 @@ pub mod test_mem;
 use cortex_m_semihosting::hprintln;
 pub mod test_excp;
 pub mod test_scheduler;
+pub mod test_interupt;
 
 #[cfg(feature = "test_timer")]
 pub mod test_timer;
@@ -32,4 +33,9 @@ pub fn run_all_tests() {
     // test_thread::test_thread_context_switch();
     // test_thread::test_thread_context_switch_from_to();
     // test_scheduler::test_insert_thread();
+    // test_scheduler::test_schedule_start();
+    // test_scheduler::test_schedule();
+
+    // test_interupt::test_interupt();
+    // test_interupt::test_RtIntrFreeCell();
 }
