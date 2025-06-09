@@ -61,19 +61,6 @@ fn main() -> ! {
     init();
     
     if cfg!(feature = "test") {
-        // ! 已迁移至 test/mod.rs 中
-        // #[cfg(feature = "test_small_mem")]
-        // {
-        //     hprintln!("开始小内存管理测试...");
-        //     test::test_small_mem::run_simple_mem_tests();
-        //     hprintln!("小内存管理测试完成！");
-        // }
-        // #[cfg(feature = "test_timer")]
-        // {
-        //     hprintln!("开始定时器测试...");
-        //     test::test_timer::run_all_timer_tests();
-        //     hprintln!("定时器测试完成！");
-        // }
         test::run_all_tests();
         hprintln!("Tests finished.");
     }
@@ -88,6 +75,7 @@ fn main() -> ! {
 fn init() {
     // 内存分配器初始化
     mem::allocator::init_heap();
+    rtthread::idle::init_idle();
 }
 
 // --- SysTick 中断处理函数 ---

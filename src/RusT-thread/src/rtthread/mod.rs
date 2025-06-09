@@ -1,3 +1,3 @@
 pub mod thread;
 pub mod scheduler;
-// pub mod idle;
+pub mod idle;
