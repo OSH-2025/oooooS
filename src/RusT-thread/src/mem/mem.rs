@@ -20,53 +20,7 @@ use core::{mem, ptr, cell::{RefCell, UnsafeCell}}; // mem module，作用是提�
 use alloc::vec::Vec;
 use alloc::boxed::Box;
 use spin::Mutex;
-
-use core::sync::atomic::{AtomicBool, Ordering, AtomicUsize}; // 原子布尔类型，支持线程安全的布尔操作，常用于线程安全的标志状态；Ordering 指定原子操作的内存顺序，确保内存可见性和有序性
-
-// // 此处应该导入中断控制函数，但由于rthw模块尚未实现，我们创建临时空实现
-// // 实际使用时需要替换为真实的中断控制函数
-// #[inline]
-// fn rt_hw_interrupt_disable() -> usize {
-//     // 临时空实现，返回一个假的中断状态
-//     0
-// }
-
-// #[inline]
-// fn rt_hw_interrupt_enable(_level: usize) {
-//     // 临时空实现，不做任何操作
-// }
-
-// ========== BEGIN: 临时中断控制实现（测试用） ==========
-// ⚠️ 注意：外部实现中断函数后删除此段
-
-/// 禁用中断，返回旧的 PRIMASK 状态
-#[inline(always)]
-pub fn rt_hw_interrupt_disable() -> usize {
-    let primask: usize;
-    unsafe {
-        core::arch::asm!(
-            "mrs {0}, PRIMASK",
-            "cpsid i",
-            out(reg) primask,
-            options(nomem, nostack, preserves_flags)
-        );
-    }
-    primask
-}
-
-/// 恢复之前保存的 PRIMASK 状态
-#[inline(always)]
-pub fn rt_hw_interrupt_enable(level: usize) {
-    unsafe {
-        if level == 0 {
-            core::arch::asm!("cpsie i", options(nomem, nostack, preserves_flags));
-        }
-    }
-}
-
-// ========== END: 临时中断控制实现 ==========
-
-
+use crate::irq::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
 
 // 内存管理的算法常量
 const HEAP_MAGIC: u32 = 0x1ea0; // magic number是用于识别堆是否初始化或已销毁的标志
