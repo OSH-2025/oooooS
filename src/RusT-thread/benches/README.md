@@ -14,18 +14,31 @@ cd src/RusT-thread/
 - 单次和批量内存分配
 - 内存分配/释放循环
 - 内存碎片处理和整理算法
+### 定时器管理基准测试 (`timer_bench.rs`)
+- 定时器系统创建和初始化性能
+- 单次定时器和周期定时器添加性能
+- 定时器到期处理和调度算法效率
+- 定时器删除和堆维护操作
+- 定时器堆数据结构性能随规模变化
 
 ### 运行特定基准测试
 ```bash
 # 运行内存管理基准测试
 cargo bench --no-default-features --target x86_64-unknown-linux-gnu --bench memory_bench
 
+### 运行定时器的性能测试
+cargo bench --no-default-features --target x86_64-unknown-linux-gnu --bench timer_bench
+
 ```
 
 ### 运行特定的基准测试函数
 ```bash
-# 运行特定的基准测试函数
+### 运行内存模块的性能测试：
 cargo bench --no-default-features --target x86_64-unknown-linux-gnu --bench memory_bench -- single_allocation
+
+### 运行定时器的性能测试
+cargo bench --no-default-features --target x86_64-unknown-linux-gnu --bench timer_bench -- timer_creation
+cargo bench --no-default-features --target x86_64-unknown-linux-gnu --bench timer_bench -- heap_operations
 
 ```
 
