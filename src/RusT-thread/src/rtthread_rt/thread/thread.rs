@@ -8,10 +8,9 @@ use spin::Mutex;
 use crate::rtthread_rt::rtdef::*;
 use crate::rtthread_rt::thread::*;
 use crate::rtthread_rt::kservice::RTIntrFreeCell;
-use crate::rtthread_rt::hardware::irq;
-use crate::rtthread_rt::timer::*;
-use crate::rtthread_rt::rtconfig;
 use crate::rtthread_rt::hardware::*;
+use crate::rtthread_rt::timer::*;
+use crate::rtthread_rt::rtconfig::*;
 
 use core::fmt::Debug;
 use alloc::sync::Arc;
@@ -123,7 +122,7 @@ pub struct RtThreadInner {
 
 pub struct RtThread {
     /// object
-    pub name: [u8; rtconfig::RT_NAME_MAX],
+    pub name: [u8; RT_NAME_MAX],
     pub object_type: u8,
     
     /// inner mutable state
@@ -192,7 +191,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     };
     // hprintln!("stack_pointer in rt_thread_create: {:x}", stack_pointer.clone());
     let name_bytes = name.as_bytes();
-    let len = name_bytes.len().min(rtconfig::RT_NAME_MAX);
+    let len = name_bytes.len().min(RT_NAME_MAX);
     let timer = Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0)));
     let inner =unsafe {
         RTIntrFreeCell::new(RtThreadInner {
@@ -210,7 +209,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         timer,
         })
     };
-    let mut name = [0u8; rtconfig::RT_NAME_MAX];
+    let mut name = [0u8; RT_NAME_MAX];
     name[..len].copy_from_slice(&name_bytes[..len]);
     let thread = RtThread {
         name,
@@ -221,6 +220,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     let thread_arc = Arc::new(thread);
     timer::rt_timer_start(thread_arc.clone().inner.exclusive_access().timer.clone());
     RT_THREAD_LIST.exclusive_access().push(thread_arc.clone()); 
+    // hprintln!("rt_thread_create finished.");
     thread_arc
 }
 
@@ -248,11 +248,11 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
         scheduler::remove_thread(thread.clone());
     }
     
-    let level = irq::rt_hw_interrupt_disable();
+    let level = rt_hw_interrupt_disable();
 
     thread.inner.exclusive_access().stat = ThreadState::Close; 
 
-    irq::rt_hw_interrupt_enable(level);
+    rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -261,16 +261,17 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
 /// @return RT_EOK: 启动成功
 ///         RT_ERROR: 启动失败
 pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
+    hprintln!("rt_thread_startup...");
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Init as u8) {
         return RT_ERROR;
     }
-    
-    let level = irq::rt_hw_interrupt_disable();
-    
+    hprintln!("rt_thread_startup 1...");
+    let level = rt_hw_interrupt_disable();
+    hprintln!("rt_thread_startup 2...");
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
-
+    hprintln!("rt_thread_startup 3...");
     rt_thread_resume(thread.clone()); 
-
+    hprintln!("rt_thread_startup 4...");
     /*
     if rt_thread_self() != RT_NULL {
         schedule::Scheduler::schedule(); 
@@ -278,7 +279,9 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
     */
 
     scheduler::rt_schedule();
-    irq::rt_hw_interrupt_enable(level);
+    hprintln!("rt_thread_startup 5...");
+    rt_hw_interrupt_enable(level);
+    hprintln!("rt_thread_startup 6...");
     RT_EOK
 }
 
@@ -292,13 +295,13 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
         return RT_ERROR;
     }
 
-    let level = irq::rt_hw_interrupt_disable();
+    let level = rt_hw_interrupt_disable();
     scheduler::remove_thread(thread.clone());
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
     
     timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
 
-    irq::rt_hw_interrupt_enable(level);
+    rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -312,7 +315,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
         return RT_ERROR;
     }
 
-    let level = irq::rt_hw_interrupt_disable();
+    let level = rt_hw_interrupt_disable();
 
     thread.inner.exclusive_access().error = RT_EOK;
 
@@ -330,7 +333,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
         thread.inner.exclusive_access().error = RT_EOK;
     }
 
-    irq::rt_hw_interrupt_enable(level);
+    rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
@@ -353,7 +356,7 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
         }
         RT_THREAD_CTRL_CHANGE_PRIORITY => {
             let priority = arg; //todo
-            let level = irq::rt_hw_interrupt_disable();
+            let level = rt_hw_interrupt_disable();
             if thread.inner.exclusive_access().stat.get_stat() == (ThreadState::Ready as u8) {
                 scheduler::remove_thread(thread.clone());
                 thread.inner.exclusive_access().current_priority = priority;
@@ -371,7 +374,7 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
                 thread.inner.exclusive_access().current_priority = priority;
 
             }
-            irq::rt_hw_interrupt_enable(level);
+            rt_hw_interrupt_enable(level);
             RT_EOK
         }
         _ => {
@@ -382,23 +385,28 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
 }
 
 pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
+    hprintln!("rt_thread_resume...");
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Suspend as u8) {
         return RT_ERROR;
     }
+    hprintln!("rt_thread_resume 1...");
+    let level = rt_hw_interrupt_disable();
 
-    let level = irq::rt_hw_interrupt_disable();
     // todo RT_THREAD_LIST.remove(thread.clone());未实现，可能不需要实现
+
     scheduler::insert_thread(thread.clone());
-    irq::rt_hw_interrupt_enable(level);
+    hprintln!("rt_thread_resume 2...");
+    rt_hw_interrupt_enable(level);
+    hprintln!("rt_thread_resume 3...");
     RT_EOK
 }
 
 pub fn rt_thread_yield() -> RtErrT {
-    let level = irq::rt_hw_interrupt_disable();
+    let level = rt_hw_interrupt_disable();
     let current_thread = scheduler::get_current_thread();
     current_thread.inner.exclusive_access().remaining_tick = current_thread.inner.exclusive_access().init_tick;
     current_thread.inner.exclusive_access().stat.or_signal(RT_THREAD_STAT_YIELD);
     scheduler::rt_schedule();
-    irq::rt_hw_interrupt_enable(level);
+    rt_hw_interrupt_enable(level);
     RT_EOK
 }

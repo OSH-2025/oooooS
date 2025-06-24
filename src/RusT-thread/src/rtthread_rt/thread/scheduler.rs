@@ -9,8 +9,7 @@ use cortex_m_semihosting::{hprintln, hprint};
 use crate::rtthread_rt::kservice::RTIntrFreeCell;
 use crate::rtthread_rt::rtconfig;
 use crate::rtthread_rt::rtdef::ThreadState;
-use crate::rtthread_rt::hardware::irq;
-use crate::rtthread_rt::hardware::{rt_hw_context_switch_to, rt_hw_context_switch};
+use crate::rtthread_rt::hardware::*;
 use crate::rtthread_rt::thread::thread::RtThread;
 
 lazy_static! {
@@ -256,7 +255,7 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
 pub fn rt_schedule() {
     hprintln!("schedule");
     // 关中断
-    let level = irq::rt_hw_interrupt_disable();
+    let level = rt_hw_interrupt_disable();
 
     // 检查锁嵌套计数
     {
@@ -264,7 +263,7 @@ pub fn rt_schedule() {
         let mut scheduler = RT_SCHEDULER.exclusive_access();
         if scheduler.lock_nest > 0 {
             hprintln!("schedule: lock_nest > 0");
-            irq::rt_hw_interrupt_enable(level);
+            rt_hw_interrupt_enable(level);
             return;
         }
         // 此处scheduler的借用已经释放
@@ -273,11 +272,11 @@ pub fn rt_schedule() {
     // 准备线程切换
     if let Some(context) = prepare_thread_switch() {
         // 此时scheduler的借用已经释放
-        if irq::rt_interrupt_get_nest() == 0 {
+        if rt_interrupt_get_nest() == 0 {
             // 在非中断环境下切换
             execute_thread_switch(context);
             // 开中断
-            irq::rt_hw_interrupt_enable(level);
+            rt_hw_interrupt_enable(level);
             return;
         } else {
             // 在中断环境下切换
@@ -286,7 +285,7 @@ pub fn rt_schedule() {
     }
 
     // 开中断
-    irq::rt_hw_interrupt_enable(level);
+    rt_hw_interrupt_enable(level);
 }
 
 

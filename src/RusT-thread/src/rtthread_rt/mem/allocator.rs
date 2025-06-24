@@ -1,4 +1,5 @@
 use core::sync::atomic::{AtomicBool, Ordering};
+use cortex_m_semihosting::hprintln;
 
 // Global allocator implementation
 
@@ -29,7 +30,9 @@ static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::empty();
 
 /// Initialize heap memory for the global allocator
 pub fn init_heap() {
+    // hprintln!("Initializing heap...");
     if !HEAP_INITIALIZED.load(Ordering::SeqCst) {
+        // hprintln!("Heap not initialized.");
         unsafe {
             #[cfg(all(feature = "good_memory_allocator", not(feature = "buddy_system_allocator")))]
             {
@@ -38,11 +41,14 @@ pub fn init_heap() {
             
             #[cfg(all(feature = "buddy_system_allocator", not(feature = "good_memory_allocator")))]
             {
+                // hprintln!("Initializing buddy_system_allocator...");
                 HEAP_ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
+                // hprintln!("buddy_system_allocator initialized.");
             }
         }
         HEAP_INITIALIZED.store(true, Ordering::SeqCst);
     }
+    // hprintln!("Heap initialized.");
 }
 
 // 编译时检查：确保只启用了一个分配器

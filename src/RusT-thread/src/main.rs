@@ -45,12 +45,12 @@ use stm32f4xx_hal::{
 // mod rtconfig;
 // mod clock;
 // mod timer;
-mod test;
 // mod cpuport;
 
+mod test;
 
 #[entry]
-fn main() -> ! {
+fn entry() -> ! {
 
     hprintln!("Hello, world!");
 
@@ -73,6 +73,7 @@ fn main() -> ! {
     init();
     
     if cfg!(feature = "test") {
+        hprintln!("Running tests...");
         test::run_all_tests();
         hprintln!("Tests finished.");
     }
@@ -85,9 +86,11 @@ fn main() -> ! {
 }
 
 fn init() {
+    hprintln!("Initializing...");
     // 内存分配器初始化
     rtthread_rt::mem::allocator::init_heap();
-    rtthread_rt::thread::idle::init_idle();
+    // rtthread_rt::thread::idle::init_idle();
+    hprintln!("Initialization finished.");
 }
 
 // --- SysTick 中断处理函数 ---
