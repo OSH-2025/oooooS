@@ -7,21 +7,24 @@
 //! 
 //! The module also provides RT-Thread compatible memory management APIs.
 
+#![allow(unused_imports)]
 extern crate alloc;
 
 
-// 从rtdef module导入类型
-use crate::rtdef::{
-    rt_err_t, rt_size_t, 
-    RT_EOK, RT_TRUE, RT_FALSE, RT_ALIGN_SIZE,
-};
 
 use core::{mem, ptr, cell::{RefCell, UnsafeCell}}; // mem module，作用是提供内存相关的函数和类型，ptr module，作用是提供指针相关的函数和类型
 use alloc::vec::Vec;
 use alloc::boxed::Box;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Mutex;
-use crate::irq::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
+
+// 从rtdef module导入类型
+use crate::rtthread_rt::rtdef::{
+    rt_err_t, rt_size_t, 
+    RT_EOK, RT_TRUE, RT_FALSE, RT_ALIGN_SIZE,
+};
+use crate::rtthread_rt::rtconfig::RT_NAME_MAX;
+use crate::rtthread_rt::hardware::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
 
 // 内存管理的算法常量
 const HEAP_MAGIC: u32 = 0x1ea0; // magic number是用于识别堆是否初始化或已销毁的标志
@@ -57,7 +60,7 @@ pub struct RTMemory {
 #[repr(C)]
 pub struct RTObject {
     /// 用来储存对象的名称的数组
-    pub name: [u8; crate::rtconfig::RT_NAME_MAX as usize],
+    pub name: [u8; RT_NAME_MAX as usize],
     /// 对象的类型
     pub obj_type: u8,
     /// 对象的标志状态

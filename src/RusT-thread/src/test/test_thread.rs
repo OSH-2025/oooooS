@@ -3,14 +3,14 @@
 
 //-------------测试1：上下文切换--------------------------------
 
-use crate::rtthread::thread::*;
-use crate::context::*;
-use crate::cpuport::*;
+
 use cortex_m_semihosting::hprintln;
-use core::arch::asm;
-use lazy_static::lazy_static;
-use core::sync::atomic::{AtomicU32, Ordering};
-use crate::rtdef::*;
+// use core::arch::asm;
+// use lazy_static::lazy_static;
+// use core::sync::atomic::{AtomicU32, Ordering};
+use crate::rtthread_rt::rtdef::*;
+use crate::rtthread_rt::thread::*;
+use crate::rtthread_rt::hardware::*;
 
 pub extern "C" fn thread1(arg: usize) -> () {
     let mut i = arg;

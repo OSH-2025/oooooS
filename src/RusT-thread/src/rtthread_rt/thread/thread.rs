@@ -1,16 +1,18 @@
-use crate::rtconfig;
+
 use lazy_static::lazy_static;
+
 extern crate alloc;
 use alloc::vec::Vec;
-use crate::rtdef::*;
-use crate::kservice::RTIntrFreeCell;
-use crate::rtthread::scheduler;
-// use core::ffi::c_void;
-// use crate::rtthread::idle;
-use crate::timer;
 use spin::Mutex;
-use crate::irq;
-// use alloc::boxed::Box;
+
+use crate::rtthread_rt::rtdef::*;
+use crate::rtthread_rt::thread::*;
+use crate::rtthread_rt::kservice::RTIntrFreeCell;
+use crate::rtthread_rt::hardware::irq;
+use crate::rtthread_rt::timer::*;
+use crate::rtthread_rt::rtconfig;
+use crate::rtthread_rt::hardware::*;
+
 use core::fmt::Debug;
 use alloc::sync::Arc;
 use alloc::alloc::{
@@ -19,7 +21,7 @@ use alloc::alloc::{
     Layout,
 };
 use cortex_m_semihosting::hprintln;
-use crate::cpuport::rt_hw_stack_init;
+
 
 pub const KERNEL_STACK_SIZE: usize = 0x400;//1kB
 

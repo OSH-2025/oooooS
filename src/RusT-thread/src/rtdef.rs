@@ -7,7 +7,7 @@ use crate::rtconfig;
 extern crate alloc;
 use alloc::vec::Vec;
 use alloc::boxed::Box;
-use heapless::pool::object::Object;
+// use heapless::pool::object::Object;
 use lazy_static::lazy_static;
 use spin::Mutex;
 

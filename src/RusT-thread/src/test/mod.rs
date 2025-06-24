@@ -1,9 +1,12 @@
+#![allow(warnings)]
 pub mod test_thread;
 pub mod test_mem;
-use cortex_m_semihosting::hprintln;
+// use cortex_m_semihosting::hprintln;
 pub mod test_excp;
 pub mod test_scheduler;
 pub mod test_interupt;
+
+
 
 #[cfg(feature = "test_timer")]
 pub mod test_timer;

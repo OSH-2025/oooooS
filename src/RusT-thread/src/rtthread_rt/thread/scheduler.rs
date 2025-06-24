@@ -1,16 +1,17 @@
-use crate::rtthread_rt::thread::RtThread;
+
 use lazy_static::lazy_static;
 extern crate alloc;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use cortex_m_semihosting::{hprintln, hprint};
+
 use crate::rtthread_rt::kservice::RTIntrFreeCell;
 use crate::rtthread_rt::rtconfig;
-use alloc::vec::Vec;
 use crate::rtthread_rt::rtdef::ThreadState;
-use crate::rtthread_rt::hardware;
 use crate::rtthread_rt::hardware::irq;
-use crate::context::{rt_hw_context_switch_to, rt_hw_context_switch};
-use cortex_m_semihosting::{hprintln};
+use crate::rtthread_rt::hardware::{rt_hw_context_switch_to, rt_hw_context_switch};
+use crate::rtthread_rt::thread::thread::RtThread;
 
 lazy_static! {
     /// 调度器

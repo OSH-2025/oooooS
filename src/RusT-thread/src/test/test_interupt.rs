@@ -1,6 +1,6 @@
-use crate::irq;
 use cortex_m_semihosting::hprintln;
-use crate::kservice;
+use crate::rtthread_rt::hardware::irq;
+use crate::rtthread_rt::kservice::RTIntrFreeCell;
 
 pub fn test_interupt(){
     let level =irq::rt_hw_interrupt_disable();
@@ -20,7 +20,7 @@ fn interrupt_inner(){
 }
 
 pub fn test_RtIntrFreeCell(){
-    let mut data = unsafe { kservice::RTIntrFreeCell::<u128>::new(0) };
+    let mut data = unsafe { RTIntrFreeCell::<u128>::new(0) };
 
     let mut data = data.exclusive_access();
     *data += 1;

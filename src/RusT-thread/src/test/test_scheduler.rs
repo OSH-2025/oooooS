@@ -1,6 +1,6 @@
-use crate::rtthread::scheduler::*;
-use crate::rtthread::thread::{RtThread, rt_thread_create};
-use crate::rtdef::ThreadState;
+use crate::rtthread_rt::thread::scheduler::*;
+use crate::rtthread_rt::thread::thread::{RtThread, rt_thread_create};
+use crate::rtthread_rt::rtdef::ThreadState;
 use cortex_m_semihosting::hprintln;
 
 

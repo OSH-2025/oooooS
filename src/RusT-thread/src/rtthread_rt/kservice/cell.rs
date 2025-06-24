@@ -1,8 +1,8 @@
-/// 服务管理
-/// 
-/// 
+#![warn(unused_imports)]        // 未使用的导入
+/// 内核基础服务
 
 
+// #![warn(warnings)]
 /// 自旋锁
 /// 
 /// 用于保护共享资源 
@@ -17,12 +17,8 @@
 /// DATA.unlock();
 
 use core::cell::{RefCell, RefMut};
-use core::i16;
 use core::ops::{Deref, DerefMut};
-use lazy_static::*;
-use cortex_m_rt::{exception};
-use cortex_m_semihosting::hprintln;
-use crate::irq::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
+use crate::rtthread_rt::hardware::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
 
 
 /// 中断安全的FreeCell
@@ -95,33 +91,6 @@ impl<'a, T> DerefMut for RTIntrRefMut<'a, T> {
     }
 }
 
-
-
-/// 异常处理
-
-#[exception]
-fn MemoryManagement() -> ! {
-    hprintln!("MemoryManagement");
-    loop {}
-}
-
-#[exception]
-fn BusFault() -> ! {
-    hprintln!("BusFault");
-    loop {}
-}
-
-#[exception]
-fn UsageFault() -> ! {
-    hprintln!("UsageFault");
-    loop {}
-}
-
-#[exception] 
-unsafe fn DefaultHandler(irqn: i16) {
-    hprintln!("DefaultHandler: irqn = {}", irqn);
-    loop {}
-}
 
 
 

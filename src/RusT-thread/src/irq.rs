@@ -8,7 +8,7 @@
 //! - rt_interrupt_enter_sethook/leave_sethook：设置中断进入/退出钩子（需启用hook特性）。
 
 use core::arch::asm;
-use cortex_m_semihosting::hprintln;
+// use cortex_m_semihosting::hprintln;
 use lazy_static::lazy_static;
 use crate::kservice::RTIntrFreeCell;
 use core::sync::atomic::{AtomicU8, Ordering};

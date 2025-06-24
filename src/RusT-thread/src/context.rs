@@ -2,7 +2,7 @@
 //! 
 //! 使用内联汇编实现线程上下文保存与恢复
 
-use cortex_m;
+// use cortex_m;
 use cortex_m_rt;
 use core::arch::asm;
 use cortex_m_semihosting::hprintln;

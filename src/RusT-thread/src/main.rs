@@ -1,12 +1,24 @@
 #![no_std]
 #![no_main]
+
+// #![warn(unused_variables)]      // 未使用的变量
+#![warn(unused_imports)]        // 未使用的导入
+// #![warn(dead_code)]             // 死代码
+// #![warn(unreachable_code)]      // 不可达代码
+// #![warn(missing_docs)]          // 缺少文档
+// #![warn(unused_mut)]            // 未使用的 mut
+// #![warn(unused_assignments)]  
 #![allow(warnings)]
+
+
 
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
 // use panic_abort as _; // requires nightly
 // use panic_itm as _; // logs messages over ITM; requires ITM support
 // use panic_semihosting as _; // logs messages to the host stderr; requires a debugger
+mod rtthread_rt;
+
 
 use cortex_m::asm;
 use cortex_m_rt::{entry, exception}; // 引入 exception 宏
@@ -21,20 +33,20 @@ use stm32f4xx_hal::{
     // power::Dbgmcu, // 根据需要引入 Debug MCU
 };
 
-use fugit::RateExtU32; // 引入频率单位扩展 trait
+// use fugit::RateExtU32; // 引入频率单位扩展 trait
 
 // 引入 timer 和 clock 模块
-mod rtdef;
-mod irq;
-mod context;
-mod rtthread;
-mod kservice;
-mod mem;
-mod rtconfig;
-mod clock;
-mod timer;
+// mod rtdef;
+// mod irq;
+// mod context;
+// mod rtthread;
+// mod kservice;
+// mod mem;
+// mod rtconfig;
+// mod clock;
+// mod timer;
 mod test;
-mod cpuport;
+// mod cpuport;
 
 
 #[entry]
@@ -55,7 +67,7 @@ fn main() -> ! {
     // // --- SysTick 初始化 ---
     let syst = cp.SYST;
     // 调用 timer.rs 中的 rt_system_timer_init 函数来配置 SysTick
-    timer::rt_system_timer_init(syst, &clocks);
+    rtthread_rt::timer::timer::rt_system_timer_init(syst, &clocks);
     
     //初始化内存
     init();
@@ -74,8 +86,8 @@ fn main() -> ! {
 
 fn init() {
     // 内存分配器初始化
-    mem::allocator::init_heap();
-    rtthread::idle::init_idle();
+    rtthread_rt::mem::allocator::init_heap();
+    rtthread_rt::thread::idle::init_idle();
 }
 
 // --- SysTick 中断处理函数 ---
@@ -84,7 +96,7 @@ fn init() {
 unsafe fn SysTick() {
     // 在 SysTick ISR 中调用 rt_tick_increase
     // rt_tick_increase 函数现在在 clock 模块中
-    clock::rt_tick_increase();
+    rtthread_rt::timer::clock::rt_tick_increase();
 
     // 如果需要，可以在这里检查是否需要进行任务调度
     // 例如：crate::rtthread::rt_schedule(); // 假设存在调度函数
