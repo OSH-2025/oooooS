@@ -1,23 +1,13 @@
 #![no_std]
 #![no_main]
 
-// #![warn(unused_variables)]      // 未使用的变量
-#![warn(unused_imports)]        // 未使用的导入
-// #![warn(dead_code)]             // 死代码
-// #![warn(unreachable_code)]      // 不可达代码
-// #![warn(missing_docs)]          // 缺少文档
-// #![warn(unused_mut)]            // 未使用的 mut
-// #![warn(unused_assignments)]  
 #![allow(warnings)]
-
-
 
 // pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
 // use panic_abort as _; // requires nightly
 // use panic_itm as _; // logs messages over ITM; requires ITM support
 // use panic_semihosting as _; // logs messages to the host stderr; requires a debugger
-mod rtthread_rt;
 
 
 use cortex_m::asm;
@@ -35,25 +25,52 @@ use stm32f4xx_hal::{
 
 // use fugit::RateExtU32; // 引入频率单位扩展 trait
 
-// 引入 timer 和 clock 模块
-// mod rtdef;
-// mod irq;
-// mod context;
-// mod rtthread;
-// mod kservice;
-// mod mem;
-// mod rtconfig;
-// mod clock;
-// mod timer;
-// mod cpuport;
-
+mod rtthread_rt;
+use rtthread_rt::rtconfig;
+use rtthread_rt::thread::{
+    thread,
+    idle,
+    scheduler,
+};
 mod test;
+
+
+// --- SysTick 中断处理函数 ---
+// 使用 #[exception] 宏将此函数标记为 SysTick 中断处理程序
+#[exception]
+unsafe fn SysTick() {
+    // 在 SysTick ISR 中调用 rt_tick_increase
+    // rt_tick_increase 函数现在在 clock 模块中
+    rtthread_rt::timer::clock::rt_tick_increase();
+
+    // 如果需要，可以在这里检查是否需要进行任务调度
+    // 例如：crate::rtthread::rt_schedule(); // 假设存在调度函数
+}
 
 #[entry]
 fn entry() -> ! {
 
     hprintln!("Hello, world!");
+    
+    //初始化
+    init();
+    
+    if cfg!(feature = "test") {
+        hprintln!("Running tests...");
+        test::run_all_tests();
+        hprintln!("Tests finished.");
+    }
 
+    init_thread();
+
+    loop {
+        panic!("程序不应该运行到这里，请检查初始化是否正确");
+        asm::nop(); // 空操作，防止编译器优化掉循环
+    }
+}
+
+fn init() {
+    // hprintln!("Initializing...");
     // 获取外设的所有权
     let dp = pac::Peripherals::take().unwrap();
     let cp = cortex_m::Peripherals::take().unwrap();
@@ -68,43 +85,31 @@ fn entry() -> ! {
     let syst = cp.SYST;
     // 调用 timer.rs 中的 rt_system_timer_init 函数来配置 SysTick
     rtthread_rt::timer::timer::rt_system_timer_init(syst, &clocks);
-    
-    //初始化内存
-    init();
-    
-    if cfg!(feature = "test") {
-        hprintln!("Running tests...");
-        test::run_all_tests();
-        hprintln!("Tests finished.");
-    }
-
-    // --- 应用主循环 ---
-    loop {
-        // 可以在这里添加应用程序的主要逻辑
-        asm::nop(); // 空操作，防止编译器优化掉循环
-    }
-}
-
-fn init() {
-    hprintln!("Initializing...");
     // 内存分配器初始化
     rtthread_rt::mem::allocator::init_heap();
-    // rtthread_rt::thread::idle::init_idle();
-    hprintln!("Initialization finished.");
+
+    // hprintln!("Initialization finished.");
 }
 
-// --- SysTick 中断处理函数 ---
-// 使用 #[exception] 宏将此函数标记为 SysTick 中断处理程序
-#[exception]
-unsafe fn SysTick() {
-    // 在 SysTick ISR 中调用 rt_tick_increase
-    // rt_tick_increase 函数现在在 clock 模块中
-    rtthread_rt::timer::clock::rt_tick_increase();
-
-    // 如果需要，可以在这里检查是否需要进行任务调度
-    // 例如：crate::rtthread::rt_schedule(); // 假设存在调度函数
+fn init_thread() {
+    // hprintln!("Initializing thread...");
+    idle::init_idle();
+    // 创建用户主线程
+    let main = thread::rt_thread_create("main", main_entry as usize, rtconfig::RT_MAIN_THREAD_STACK_SIZE as usize, rtconfig::RT_MAIN_THREAD_PRIORITY as u8, 1000);
+    scheduler::insert_thread(main.clone());
+    // 启动调度器
+    scheduler::rt_schedule_start();
+    // hprintln!("Thread initialized.");
 }
 
+// 用户主线程入口
+pub extern "C" fn main_entry(arg: usize) -> () {
+    hprintln!("main_entry...");
+    // 用户主线程入口
+    loop{
+        asm::nop;
+    }
+}
 
 // ! 测试注意
 // ! 推荐的测试方式是单独写一个测试文件，

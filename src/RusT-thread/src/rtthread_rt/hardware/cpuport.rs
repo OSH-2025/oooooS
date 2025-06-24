@@ -66,7 +66,7 @@ pub unsafe fn rt_hw_stack_init(
     stk &= !0x7;
     stk -= core::mem::size_of::<StackFrame>();
 
-    hprintln!("stk: {:x}", stk);
+    // hprintln!("rt_hw_stack_init: stk: {:x}", stk);
     let stack_frame = stk as *mut StackFrame;
 
     // 初始化所有寄存器为0xdeadbeef

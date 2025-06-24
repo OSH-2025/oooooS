@@ -179,6 +179,8 @@ impl RtContext {
 /// @param tick 线程时间片
 /// @return 线程对象
 pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
+    // todo 健壮性检查：同名线程是否存在、栈大小是否合理、优先级是否合理、时间片是否合理
+
     // hprintln!("in rt_thread_create:");
     let mut kernel_stack = KernelStack::new(stack_size);
     let stack_pointer = unsafe {
@@ -261,27 +263,28 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
 /// @return RT_EOK: 启动成功
 ///         RT_ERROR: 启动失败
 pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
-    hprintln!("rt_thread_startup...");
+    // hprintln!("rt_thread_startup...");
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Init as u8) {
         return RT_ERROR;
     }
-    hprintln!("rt_thread_startup 1...");
+    // hprintln!("rt_thread_startup 1...");
     let level = rt_hw_interrupt_disable();
-    hprintln!("rt_thread_startup 2...");
+    // hprintln!("rt_thread_startup 2...");
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
-    hprintln!("rt_thread_startup 3...");
+    // hprintln!("rt_thread_startup 3...");
     rt_thread_resume(thread.clone()); 
-    hprintln!("rt_thread_startup 4...");
+    // hprintln!("rt_thread_startup 4...");
     /*
     if rt_thread_self() != RT_NULL {
         schedule::Scheduler::schedule(); 
     }
     */
 
-    scheduler::rt_schedule();
-    hprintln!("rt_thread_startup 5...");
+    // scheduler::rt_schedule();
+    // hprintln!("rt_thread_startup 5...");
     rt_hw_interrupt_enable(level);
-    hprintln!("rt_thread_startup 6...");
+    // hprintln!("rt_thread_startup 6...");
+    scheduler::rt_schedule();
     RT_EOK
 }
 
@@ -384,20 +387,25 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
     
 }
 
+/// 线程恢复
+/// 将线程从挂起状态恢复到就绪状态（即插入到就绪队列中）
+/// @param thread 线程对象
+/// @return RT_EOK: 恢复成功
+///         RT_ERROR: 恢复失败
 pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
-    hprintln!("rt_thread_resume...");
+    // hprintln!("rt_thread_resume...");
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Suspend as u8) {
         return RT_ERROR;
     }
-    hprintln!("rt_thread_resume 1...");
+    // hprintln!("rt_thread_resume 1...");
     let level = rt_hw_interrupt_disable();
-
+    
     // todo RT_THREAD_LIST.remove(thread.clone());未实现，可能不需要实现
 
     scheduler::insert_thread(thread.clone());
-    hprintln!("rt_thread_resume 2...");
+    // hprintln!("rt_thread_resume 2...");
     rt_hw_interrupt_enable(level);
-    hprintln!("rt_thread_resume 3...");
+    // hprintln!("rt_thread_resume 3...");
     RT_EOK
 }
 

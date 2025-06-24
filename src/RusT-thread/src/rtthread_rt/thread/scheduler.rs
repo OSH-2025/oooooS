@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use cortex_m_semihosting::{hprintln, hprint};
 
 use crate::rtthread_rt::kservice::RTIntrFreeCell;
-use crate::rtthread_rt::rtconfig;
+use crate::rtthread_rt::rtconfig::*;
 use crate::rtthread_rt::rtdef::ThreadState;
 use crate::rtthread_rt::hardware::*;
 use crate::rtthread_rt::thread::thread::RtThread;
@@ -23,7 +23,7 @@ lazy_static! {
 
 /// 线程优先级表
 struct ThreadPriorityTable {
-    table: [VecDeque<Arc<RtThread>>; rtconfig::RT_THREAD_PRIORITY_MAX],
+    table: [VecDeque<Arc<RtThread>>; RT_THREAD_PRIORITY_MAX],
     #[cfg(feature = "full_ffs")]
     ready_table: [u8; 32],
     ready_priority_group: u32,
@@ -32,8 +32,8 @@ struct ThreadPriorityTable {
 impl ThreadPriorityTable {
     /// 创建一个线程优先级表
     fn new() -> Self {
-        let mut table = Vec::with_capacity(rtconfig::RT_THREAD_PRIORITY_MAX);
-        for _ in 0..rtconfig::RT_THREAD_PRIORITY_MAX {
+        let mut table = Vec::with_capacity(RT_THREAD_PRIORITY_MAX);
+        for _ in 0..RT_THREAD_PRIORITY_MAX {
             table.push(VecDeque::new());
         }
         Self {
@@ -70,7 +70,7 @@ impl ThreadPriorityTable {
     }
 
     pub fn remove_thread_by_id(&mut self, priority: u8, index: usize) {
-        hprintln!("remove_thread_by_id: priority: {}, index: {}", &priority, &index);
+        // hprintln!("remove_thread_by_id: priority: {}, index: {}", &priority, &index);
         self.table[priority as usize].remove(index);
         // 若优先级表为空，需更新就绪优先级组
         if self.table[priority as usize].is_empty() {
@@ -79,9 +79,14 @@ impl ThreadPriorityTable {
     }
 
     pub fn insert_thread(&mut self, thread: Arc<RtThread>) {
+        // hprintln!("insert_thread: ");
         let priority = thread.inner.exclusive_access().current_priority;
+        // hprintln!("insert_thread 1");
         self.table[priority as usize].push_back(thread.clone());
+        // hprintln!("insert_thread 2");
         self.tag_on_priority(priority);
+        // hprintln!("insert_thread 3");
+        // hprintln!("insert_thread: priority: {}, thread: {:?}", &priority, &thread);
     }
 
     pub fn remove_thread(&mut self,thread: Arc<RtThread>) {
@@ -155,14 +160,14 @@ impl Scheduler {
 
 fn switch_to_thread(thread: Arc<RtThread>) {
     let stack_pointer = thread.inner.exclusive_access().stack_pointer;
-    hprintln!("switch_to_thread: {:x}", &stack_pointer);
+    // hprintln!("switch_to_thread: {:x}", &stack_pointer);
     rt_hw_context_switch_to(&raw const stack_pointer as *mut u32);
 }
 
 fn switch_to_thread_from_to(from_thread: Arc<RtThread>, to_thread: Arc<RtThread>) {
     let from_stack_pointer = from_thread.inner.exclusive_access().stack_pointer;
     let to_stack_pointer = to_thread.inner.exclusive_access().stack_pointer;
-    hprintln!("switch: from: {:x}, to: {:x}", &from_stack_pointer, &to_stack_pointer);
+    // hprintln!("switch: from: {:x}, to: {:x}", &from_stack_pointer, &to_stack_pointer);
     rt_hw_context_switch(&from_stack_pointer as *const usize as *mut u32, &to_stack_pointer as *const usize as *mut u32);
 }
 
@@ -179,15 +184,18 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     // hprintln!("get scheduler");
     // 获取最高优先级
     let priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
+    // hprintln!("get highest priority");
     // 获取最高优先级的线程
     let to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(priority)?;
+    // hprintln!("get to_thread");
 
     // 是否需要将原线程重新插入就绪队列
     let mut need_insert_from_thread = false;
-
+    // hprintln!("get need_insert_from_thread");
     // 检查当前线程状态
     if let Some(current_thread) = &scheduler.current_thread {
         let current_stat = current_thread.inner.exclusive_access().stat;
+        // hprintln!("get current_stat");
         // 当前线程状态为运行
         if current_stat == ThreadState::Running {
             // 获取当前线程优先级
@@ -207,7 +215,10 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
             current_thread.inner.exclusive_access().stat.clear_yield();
         }
     }
-
+    else {
+        hprintln!("Warning: current_thread is None ! ! !");
+    }
+    
     if to_thread != scheduler.current_thread.clone().unwrap() {
         // 需要切换线程
         scheduler.current_priority = priority;
@@ -253,7 +264,7 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
 }
 
 pub fn rt_schedule() {
-    hprintln!("schedule");
+    // hprintln!("schedule");
     // 关中断
     let level = rt_hw_interrupt_disable();
 
@@ -262,7 +273,7 @@ pub fn rt_schedule() {
         // hprintln!("check lock_nest");
         let mut scheduler = RT_SCHEDULER.exclusive_access();
         if scheduler.lock_nest > 0 {
-            hprintln!("schedule: lock_nest > 0");
+            // hprintln!("schedule: lock_nest > 0");
             rt_hw_interrupt_enable(level);
             return;
         }
@@ -271,15 +282,19 @@ pub fn rt_schedule() {
     // hprintln!("lock_nest <= 0");
     // 准备线程切换
     if let Some(context) = prepare_thread_switch() {
-        // 此时scheduler的借用已经释放
+        // hprintln!("prepare_thread_switch");
+
         if rt_interrupt_get_nest() == 0 {
             // 在非中断环境下切换
+            // hprintln!("execute_thread_switch: level: {:x}", &level);
+
             execute_thread_switch(context);
             // 开中断
             rt_hw_interrupt_enable(level);
             return;
         } else {
             // 在中断环境下切换
+            // hprintln!("execute_thread_switch: level: {:x}", &level);
             execute_thread_switch(context);
         }
     }
@@ -296,7 +311,7 @@ pub fn start_scheduler() -> Option<Arc<RtThread>>{
     scheduler.current_priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
     // 获取最高优先级的线程
     scheduler.current_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(scheduler.current_priority);
-    hprintln!("current_thread: {:?}", &scheduler.current_thread.clone().unwrap());
+    // hprintln!("current_thread: {:?}", &scheduler.current_thread.clone().unwrap());
     if scheduler.current_thread.is_some() {
         // 设置线程状态为运行
         scheduler.current_thread.as_ref().unwrap().inner.exclusive_access().stat = ThreadState::Running;
@@ -407,6 +422,7 @@ pub fn remove_thread(thread: Arc<RtThread>) {
 }
 
 pub fn insert_thread(thread: Arc<RtThread>) {
+    // hprintln!("insert_thread: {:?}", &thread);
     RT_THREAD_PRIORITY_TABLE.exclusive_access().insert_thread(thread);
 }
 
@@ -436,7 +452,7 @@ pub fn output_priority_table(){
 
     hprintln!("priority table:");
 
-    for i in 0..rtconfig::RT_THREAD_PRIORITY_MAX {
+    for i in 0..RT_THREAD_PRIORITY_MAX {
         hprintln!("priority: {}", i);
         for thread in priority_table.table[i].iter() {
             hprintln!("thread: {:?}", thread);

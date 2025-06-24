@@ -16,6 +16,9 @@ pub const RT_USING_COMPONENTS_INIT: bool = true;
 /// 使用用户主函数
 pub const RT_USING_USER_MAIN: bool = true;
 
+/// 用户主线程优先级
+pub const RT_MAIN_THREAD_PRIORITY: u32 = 0;
+
 /// 主函数堆栈大小
 pub const RT_MAIN_THREAD_STACK_SIZE: u32 = 256;
 
