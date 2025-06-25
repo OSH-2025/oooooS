@@ -14,6 +14,7 @@ pub mod test_excp;
 pub mod test_scheduler;
 pub mod test_interupt;
 pub mod example;
+pub mod test_cell;
 
 
 #[cfg(feature = "test_timer")]
@@ -49,4 +50,5 @@ pub fn run_all_tests() {
 
     // test_interupt::test_interupt();
     // test_interupt::test_RtIntrFreeCell();
+    test_cell::test_cell();
 }

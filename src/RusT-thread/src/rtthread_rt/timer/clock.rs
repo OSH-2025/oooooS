@@ -43,8 +43,8 @@ pub fn rt_tick_increase() {
         thread.inner.exclusive_access().remaining_tick -= 1;
         
         if thread.inner.exclusive_access().remaining_tick == 0 {
-            hprintln!("rt_tick_increase: yield");
-            hprintln!("thread: {:?}", thread.clone());
+            // hprintln!("rt_tick_increase: yield");
+            // hprintln!("thread: {:?}", thread.clone());
             rt_thread_yield();
         }
     }

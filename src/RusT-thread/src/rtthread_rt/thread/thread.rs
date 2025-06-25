@@ -62,7 +62,7 @@ pub struct RtThreadInner {
 
     /// context
     pub kernel_stack: KernelStack,
-    pub stack_pointer: usize,
+    pub stack_pointer: u32,
     
 
     /// user data
@@ -158,7 +158,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         init_tick: tick,
         remaining_tick: tick,
         kernel_stack,
-        stack_pointer,
+        stack_pointer: stack_pointer as u32,
         user_data: 0,
         timer,
         })

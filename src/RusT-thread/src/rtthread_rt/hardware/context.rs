@@ -69,6 +69,7 @@ pub fn rt_hw_context_switch(from_sp: *mut u32, to_sp: *mut u32) {
 /// 中断中的线程上下文切换 (在Cortex-M4上与普通切换相同)
 #[inline]
 pub fn rt_hw_context_switch_interrupt(from_sp: *mut u32, to_sp: *mut u32) {
+    // hprintln!("rt_hw_context_switch_interrupt: from_sp: {:x}, to_sp: {:x}", from_sp, to_sp);
     rt_hw_context_switch(from_sp, to_sp)
 }
 
