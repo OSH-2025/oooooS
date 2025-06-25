@@ -6,11 +6,13 @@
 
 use lazy_static::lazy_static;
 use crate::rtthread_rt::kservice::RTIntrFreeCell;
-// use crate::rtthread::thread::RtThread;
 use crate::rtthread_rt::rtconfig::RT_TICK_PER_SECOND;
 use crate::rtthread_rt::hardware::irq::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
 use crate::rtthread_rt::timer::timer::rt_timer_check;
 use crate::rtthread_rt::rtdef::RT_THREAD_STAT_YIELD;
+use crate::rtthread_rt::thread::*;
+use cortex_m_semihosting::hprintln;
+
 //调试
 // use cortex_m_semihosting::hprintln;
 
@@ -37,14 +39,16 @@ pub fn rt_tick_increase() {
     let level = rt_hw_interrupt_disable();
     *RT_TICK.exclusive_access() +=1 ;
 
-    // let thread = RtThread::current();//TODO: 获取当前线程
-    // thread.inner.exclusive_access().remaining_tick -= 1;
+    if let Some(thread) = rt_thread_self() {
+        thread.inner.exclusive_access().remaining_tick -= 1;
+        
+        if thread.inner.exclusive_access().remaining_tick == 0 {
+            hprintln!("rt_tick_increase: yield");
+            hprintln!("thread: {:?}", thread.clone());
+            rt_thread_yield();
+        }
+    }
 
-    // if thread.inner.exclusive_access().remaining_tick == 0 {
-    //     thread.inner.exclusive_access().remaining_tick = thread.inner.exclusive_access().init_tick;
-    //     thread.inner.exclusive_access().stat |= RT_THREAD_STAT_YIELD;
-    //     RtThread::schedule();//TODO: 重新调度
-    // }
 
     rt_hw_interrupt_enable(level);
     // 检查定时器

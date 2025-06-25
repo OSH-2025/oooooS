@@ -55,10 +55,14 @@ fn switch_to_thread(thread: Arc<RtThread>) {
 }
 
 fn switch_to_thread_from_to(from_thread: Arc<RtThread>, to_thread: Arc<RtThread>) {
+
+    // 实现有误：应该传入线程的栈指针的原始地址，而不要经过RTIntrFreeCell的引用转换
     let from_stack_pointer = from_thread.inner.exclusive_access().stack_pointer;
     let to_stack_pointer = to_thread.inner.exclusive_access().stack_pointer;
     // hprintln!("switch: from: {:x}, to: {:x}", &from_stack_pointer, &to_stack_pointer);
     rt_hw_context_switch(&from_stack_pointer as *const usize as *mut u32, &to_stack_pointer as *const usize as *mut u32);
+
+    
 }
 
 // 线程切换相关的数据结构
@@ -80,7 +84,7 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     // hprintln!("get to_thread");
 
     // 是否需要将原线程重新插入就绪队列
-    let mut need_insert_from_thread = false;
+    let mut need_insert_from_thread = true;
     // hprintln!("get need_insert_from_thread");
     // 检查当前线程状态
     if let Some(current_thread) = &scheduler.current_thread {
@@ -93,10 +97,10 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
             // 当前线程优先级小于新线程优先级
             if current_priority < priority {
                 // 当前线程优先级更高，继续运行当前线程
-                need_insert_from_thread = false;
+                need_insert_from_thread = true;
             } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
                 // 优先级相同且未让出CPU，继续运行当前线程
-                need_insert_from_thread = false;
+                need_insert_from_thread = true;
             } else {
                 // 需要切换到新线程
                 need_insert_from_thread = true;
@@ -128,18 +132,27 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
 }
 
 fn execute_thread_switch(context: ThreadSwitchContext) {
+    
     let ThreadSwitchContext {
         from_thread,
         to_thread,
         need_insert_from_thread,
     } = context;
 
+    if from_thread.is_some() {
+        hprintln!("execute_thread_switch: from_thread: {:?} to_thread: {:?}", from_thread.clone(), to_thread.clone());
+    }
+
     if need_insert_from_thread {
         if let Some(from) = &from_thread {
+            // hprintln!("execute_thread_switch: from_thread: {:?} will be inserted to priority: {:?}", from.clone(), from.inner.exclusive_access().current_priority);
             // 将原线程重新插入就绪队列
             let priority = from.inner.exclusive_access().current_priority;
             RT_THREAD_PRIORITY_TABLE.exclusive_access().push_back_to_priority(priority, from.clone());
         }
+    }
+    else {
+        hprintln!("Warning: from_thread: {:?} will not be inserted to priority", from_thread.clone());
     }
 
     // 设置新线程状态为运行
@@ -154,7 +167,8 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
 }
 
 pub fn rt_schedule() {
-    // hprintln!("schedule");
+    hprintln!("schedule");
+    hprintln!("current_thread: {:?}", get_current_thread());
     // 关中断
     let level = rt_hw_interrupt_disable();
 
@@ -226,6 +240,6 @@ pub fn rt_schedule_unlock(){
     scheduler.lock_nest -= 1;
 }
 
-pub fn get_current_thread() -> Arc<RtThread> {
-    RT_SCHEDULER.exclusive_access().get_current_thread().unwrap()
+pub fn get_current_thread() -> Option<Arc<RtThread>> {
+    RT_SCHEDULER.exclusive_access().get_current_thread()
 }

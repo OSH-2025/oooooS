@@ -13,7 +13,7 @@ pub mod test_mem;
 pub mod test_excp;
 pub mod test_scheduler;
 pub mod test_interupt;
-
+pub mod example;
 
 
 #[cfg(feature = "test_timer")]

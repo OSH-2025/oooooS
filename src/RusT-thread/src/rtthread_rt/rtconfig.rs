@@ -4,7 +4,11 @@
 #![warn(unused_imports)]
 
 /// 最大优先级
+#[cfg(feature = "tiny_ffs")]
 pub const RT_THREAD_PRIORITY_MAX: usize = 32;
+
+#[cfg(feature = "full_ffs")]
+pub const RT_THREAD_PRIORITY_MAX: usize = 256;
 
 /// 时钟频率
 pub const RT_TICK_PER_SECOND: u32 = 1000;
@@ -13,22 +17,17 @@ pub const RT_TICK_PER_SECOND: u32 = 1000;
 pub const RT_ALIGN_SIZE: u32 = 4;
 
 /// 最大名称长度
-pub const RT_NAME_MAX: usize = 8;
+pub const RT_NAME_MAX: usize = 16;
 
-/// 使用组件初始化
-pub const RT_USING_COMPONENTS_INIT: bool = true;
-
-/// 使用用户主函数
-pub const RT_USING_USER_MAIN: bool = true;
 
 /// 内核栈大小
 pub const KERNEL_STACK_SIZE: usize = 0x400;//1kB
 
 /// 用户主线程优先级
-pub const RT_MAIN_THREAD_PRIORITY: u32 = 0;
+pub const RT_MAIN_THREAD_PRIORITY: u32 = 16;
 
 /// 主函数堆栈大小
-pub const RT_MAIN_THREAD_STACK_SIZE: u32 = 256;
+pub const RT_MAIN_THREAD_STACK_SIZE: u32 = 4*1024;
 
 /// 调试
 pub const RT_DEBUG: bool = false;
@@ -50,3 +49,11 @@ pub const RT_USING_SMALL_MEM: bool = true;
 pub const RT_USING_TINY_SIZE: bool = false;
 pub const RT_CONSOLEBUF_SIZE: u32 = 256;
 pub const RT_USING_CONSOLE: bool = true;
+
+#[cfg(all(feature = "tiny_ffs", feature = "full_ffs"))]
+compile_error!("只能启用一个ffs！请选择：tiny_ffs 或 full_ffs");
+
+#[cfg(not(any(feature = "tiny_ffs", feature = "full_ffs")))]
+compile_error!("必须启用一个ffs！请选择：tiny_ffs 或 full_ffs");
+
+

@@ -34,6 +34,8 @@ pub struct KernelStack {
     bottom: usize,
     /// 内核栈的大小，单位是字节
     size: usize,
+    /// 内核栈的栈指针
+    stack_pointer: usize,
 }
 
 impl KernelStack {
@@ -46,12 +48,12 @@ impl KernelStack {
             alloc(Layout::from_size_align(size, size).unwrap()) as usize
         };
         // hprintln!("KernelStack::new: bottom: {}", bottom);
-        KernelStack { bottom, size }
+        KernelStack { bottom, size , stack_pointer: 0 }
     }
 
     /// 创建一个空的内核栈
     pub fn new_empty() -> Self {
-        KernelStack { bottom: 0, size: 0 }
+        KernelStack { bottom: 0, size: 0 , stack_pointer: 0 }
     }
 
     /// 获取内核栈的大小
@@ -67,6 +69,11 @@ impl KernelStack {
     /// 获取内核栈的顶部地址
     pub fn top(&self) -> usize {
         self.bottom + self.size
+    }
+
+    /// 获取内核栈的栈指针的原始地址
+    pub fn stack_pointer(&self) -> usize {
+        &self.stack_pointer as *const usize as usize
     }
 
 }

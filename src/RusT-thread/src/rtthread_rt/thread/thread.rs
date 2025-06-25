@@ -63,6 +63,7 @@ pub struct RtThreadInner {
     /// context
     pub kernel_stack: KernelStack,
     pub stack_pointer: usize,
+    
 
     /// user data
     pub user_data: usize,
@@ -145,6 +146,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     let name_bytes = name.as_bytes();
     let len = name_bytes.len().min(RT_NAME_MAX);
     let timer = Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0)));
+    // hprintln!("timer in rt_thread_create");
     let inner =unsafe {
         RTIntrFreeCell::new(RtThreadInner {
         error: 0,
@@ -182,7 +184,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
 
 /// 获取当前线程
 /// @return 当前线程对象
-pub fn rt_thread_self() -> Arc<RtThread> {
+pub fn rt_thread_self() -> Option<Arc<RtThread>> {
     get_current_thread()
 }
 
@@ -360,10 +362,17 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
 
 pub fn rt_thread_yield() -> RtErrT {
     let level = rt_hw_interrupt_disable();
-    let current_thread = scheduler::get_current_thread();
-    current_thread.inner.exclusive_access().remaining_tick = current_thread.inner.exclusive_access().init_tick;
-    current_thread.inner.exclusive_access().stat.or_signal(RT_THREAD_STAT_YIELD);
-    scheduler::rt_schedule();
+    // hprintln!("rt_thread_yield 1...");
+    if let Some(current_thread) = scheduler::get_current_thread() {
+        // hprintln!("rt_thread_yield 2...");
+        let mut inner = current_thread.inner.exclusive_access();
+        inner.remaining_tick = inner.init_tick;
+        // hprintln!("rt_thread_yield 3...");
+        inner.stat.set_yield();
+        // hprintln!("rt_thread_yield: {:?}", current_thread.clone());
+    }
     rt_hw_interrupt_enable(level);
+    // hprintln!("rt_thread_yield 4...");
+    scheduler::rt_schedule();
     RT_EOK
 }

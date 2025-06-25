@@ -118,7 +118,7 @@ pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
 /// PendSV中断处理函数 - 进行实际的上下文切换
 #[cortex_m_rt::exception]
 unsafe fn PendSV()  {
-    // 保存编译器的帧指针
+    // 保存编译器(?)的帧指针
     let saved_r7: u32;
     unsafe {
         asm!(
