@@ -9,6 +9,7 @@ use cortex_m_semihosting::hprintln;
 // use lazy_static::lazy_static;
 // use core::sync::atomic::{AtomicU32, Ordering};
 use crate::rtthread_rt::rtdef::*;
+use crate::rtthread_rt::rtconfig::*;
 use crate::rtthread_rt::thread::*;
 use crate::rtthread_rt::hardware::*;
 

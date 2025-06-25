@@ -1,27 +1,16 @@
-#![warn(unused_imports)]        // 未使用的导入
-/// 内核基础服务
+// ! 内核服务相关函数
+// ! 
+// ! 定义了中断安全的Cell
 
+#![warn(unused_imports)]
 
-// #![warn(warnings)]
-/// 自旋锁
-/// 
-/// 用于保护共享资源 
-/// 
-/// 使用示例
-/// 
-/// static DATA: SpinLock<u32> = SpinLock::new(0);
-/// 
-/// 安全地访问和修改
-/// let mut data = DATA.lock();
-/// *data += 1;
-/// DATA.unlock();
 
 use core::cell::{RefCell, RefMut};
 use core::ops::{Deref, DerefMut};
 use crate::rtthread_rt::hardware::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
 
 
-/// 中断安全的FreeCell
+/// 中断安全的Cell
 /// 
 /// 用于保护共享资源
 /// 
@@ -40,19 +29,28 @@ pub struct RTIntrFreeCell<T> {
 
 unsafe impl<T> Sync for RTIntrFreeCell<T> {}
 
+
+/// 与RTIntrFreeCell配套的RefMut
+/// 可以更方便地访问和修改共享资源
 pub struct RTIntrRefMut<'a, T> {
     inner: Option<RefMut<'a, T>>,
     level: u32,
 }
 
 impl<T> RTIntrFreeCell<T> {
+    /// 创建一个中断安全的Cell
     pub unsafe fn new(value: T) -> Self {
         Self {
             inner: RefCell::new(value),
         }
     }
 
-    /// Panic if the data has been borrowed.
+    /// 获取一个中断安全的RefMut
+    /// 
+    /// 使用示例:
+    /// 
+    /// let mut data = DATA.exclusive_access();
+    /// 
     pub fn exclusive_access(&self) -> RTIntrRefMut<'_, T> {
         let level = rt_hw_interrupt_disable();
         // let level = 0;
@@ -62,6 +60,14 @@ impl<T> RTIntrFreeCell<T> {
         }
     }
 
+    /// 在独占访问期间执行一个闭包
+    /// 
+    /// 使用示例:
+    /// ```rust
+    /// DATA.exclusive_session(|data| {
+    ///     *data += 1; 
+    /// });
+    /// ```
     pub fn exclusive_session<F, V>(&self, f: F) -> V
     where
         F: FnOnce(&mut T) -> V,

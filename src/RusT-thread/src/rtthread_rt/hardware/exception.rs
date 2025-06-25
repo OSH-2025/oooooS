@@ -1,3 +1,9 @@
+// ! 异常处理相关函数-Cortex-M4
+// ! 
+// ! 定义了异常处理函数
+
+#![warn(unused_imports)]
+
 use cortex_m_rt::{exception};
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
@@ -195,4 +201,6 @@ pub unsafe fn rt_hw_hard_fault_exception(exception_info: *mut ExceptionInfo) {
     hard_fault_track();
     loop {}
 }
+
+
 

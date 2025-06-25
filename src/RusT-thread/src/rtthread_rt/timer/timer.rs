@@ -1,3 +1,9 @@
+// ! 定时器模块
+// ! 
+// ! 本模块实现了RT-Thread的定时器功能
+// ! 包括定时器的创建、启动、停止、控制等
+
+
 extern crate alloc;
 use crate::rtthread_rt::rtdef::RtObject;
 use crate::rtthread_rt::timer::clock::rt_tick_get;
@@ -16,8 +22,8 @@ pub const RT_TIMER_FLAG_ACTIVATED: u8 = 0x1;
 const RT_TIMER_FLAG_PERIODIC: u8 = 0x2;
 
 
-//定时器结构体
-//注意回调函数应是一个函数或闭包，且其类型满足FnMut() + Send + Sync + 'static
+/// 定时器结构体
+/// 注意回调函数应是一个函数或闭包，且其类型满足FnMut() + Send + Sync + 'static
 pub struct RtTimer {
     pub parent: RtObject,
     pub timeout_callback: Option<Box<dyn FnMut() + Send + Sync + 'static>>,
@@ -71,10 +77,10 @@ impl Drop for RtTimer {
     }
 }
 
-// 定时器句柄类型
+/// 定时器句柄类型
 pub type TimerHandle = Arc<Mutex<RtTimer>>;
 
-// 单线程环境下的全局定时器数组，只能通过本文件的接口操作
+/// 单线程环境下的全局定时器数组，只能通过本文件的接口操作
 static mut TIMERS: Option<Mutex<Vec<TimerHandle>>> = Some(Mutex::new(Vec::new()));
 
 /// 初始化定时器系统（可选，根据需要调用）

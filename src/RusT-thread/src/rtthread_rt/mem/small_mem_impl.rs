@@ -1,11 +1,10 @@
-//! Memory management module for RT-Thread
-//! 
-//! This module provides memory management functionality for RT-Thread.
-//! It supports multiple allocator implementations through features:
-//! 
-//! The module also provides RT-Thread compatible memory management APIs.
+// ! 内存管理模块
+// ! 
+// ! 定义了内存管理相关的函数和类型
+// ! 这里手动实现了小内存管理
 
-#![allow(unused_imports)]
+
+#![warn(unused_imports)]
 extern crate alloc;
 
 use core::{mem, ptr, cell::{RefCell, UnsafeCell}}; // mem module，作用是提供内存相关的函数和类型，ptr module，作用是提供指针相关的函数和类型
@@ -16,27 +15,27 @@ use spin::Mutex;
 
 // 从rtdef module导入类型
 use crate::rtthread_rt::rtdef::{
-    rt_err_t, rt_size_t, 
+    rt_err_t,
     RT_EOK, RT_TRUE, RT_FALSE, RT_ALIGN_SIZE,
 };
 use crate::rtthread_rt::rtconfig::RT_NAME_MAX;
 use crate::rtthread_rt::hardware::{rt_hw_interrupt_disable, rt_hw_interrupt_enable};
 use crate::rtthread_rt::mem::object::{rt_object_init, rt_object_detach, RTObject};
 
-// 内存管理的算法常量
+/// 内存管理的算法常量
 const HEAP_MAGIC: u32 = 0x1ea0; // magic number是用于识别堆是否初始化或已销毁的标志
 
-// 以下两个常量用于不同平台上的不同指针宽度
+/// 以下两个常量用于不同平台上的不同指针宽度
 #[cfg(target_pointer_width = "64")]
 const MIN_SIZE: usize = 24; // 表示最小内存块大小
 #[cfg(target_pointer_width = "32")]
 const MIN_SIZE: usize = 12; // 表示最小内存块大小
 // 计算对齐后的最小内存块大小，本质是向上对齐
 const MIN_SIZE_ALIGNED: usize = (MIN_SIZE + RT_ALIGN_SIZE as usize - 1) & !(RT_ALIGN_SIZE as usize - 1);
-/// Object class types
+/// 对象类类型
 pub const RT_OBJECT_CLASS_MEMORY: u8 = 8;
 
-/// Memory object structure
+/// 内存对象结构体
 #[repr(C)]
 pub struct RTMemory {
     /// 父对象
@@ -100,17 +99,17 @@ pub struct RTSmallMemItem {
     /// 内存池指针
     pub pool_ptr: usize,
     #[cfg(target_pointer_width = "64")] // 条件编译，64位系统生效
-    pub resv: u32, // 保留字段，用于对齐
+    pub resv: u32, // 保留字段，用于对齐，64位系统下使用
     /// 下一个空闲块的指针
     pub next: usize,
     /// 前一个空闲块的指针
-    pub prev: usize, // 前一个空闲块的指针
+    pub prev: usize, 
     #[cfg(feature = "mem_trace")] // 条件编译，内存跟踪生效
     #[cfg(target_pointer_width = "64")] // 条件编译，64位系统生效
-    pub thread: [u8; 8], // 线程ID
+    pub thread: [u8; 8], // 线程ID，64位系统下使用
     #[cfg(feature = "mem_trace")] // 条件编译，内存跟踪生效
     #[cfg(target_pointer_width = "32")] // 条件编译，32位系统生效
-    pub thread: [u8; 4], // 线程ID
+    pub thread: [u8; 4], // 线程ID，32位系统下使用
 }
 
 /// RTSmallMem 结构体表示一个小内存管理对象，负责管理整个小内存池的状态和信息。
@@ -283,7 +282,7 @@ pub fn rt_smem_detach(m: RTSmemT) -> rt_err_t {
 }
 
 /// Allocate memory from the small memory heap
-pub fn rt_smem_alloc(m: RTSmemT, size: rt_size_t) -> *mut u8 {
+pub fn rt_smem_alloc(m: RTSmemT, size: usize) -> *mut u8 {
     if m.is_null() || size == 0 {
         return ptr::null_mut();
     }
@@ -394,7 +393,7 @@ pub fn rt_smem_alloc(m: RTSmemT, size: rt_size_t) -> *mut u8 {
 }
 
 /// Reallocate memory from small memory heap
-pub fn rt_smem_realloc(m: RTSmemT, rmem: *mut u8, newsize: rt_size_t) -> *mut u8 {
+pub fn rt_smem_realloc(m: RTSmemT, rmem: *mut u8, newsize: usize) -> *mut u8 {
     if m.is_null() {
         return ptr::null_mut();
     }

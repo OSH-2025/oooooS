@@ -1,3 +1,10 @@
+// ! 内存分配器
+// ! 
+// ! 定义了内存分配器，并给出了对应的init_heap函数(堆初始化函数)
+// ! 默认使用buddy_system_allocator
+
+#![warn(unused_imports)]
+
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m_semihosting::hprintln;
 
@@ -28,7 +35,12 @@ static ALLOCATOR: SpinLockedAllocator = SpinLockedAllocator::empty();
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::empty();
 
-/// Initialize heap memory for the global allocator
+/// 初始化堆内存（一定要在main函数之前调用）
+/// 
+/// 使用示例:
+/// ```rust
+/// init_heap();
+/// ```
 pub fn init_heap() {
     // hprintln!("Initializing heap...");
     if !HEAP_INITIALIZED.load(Ordering::SeqCst) {

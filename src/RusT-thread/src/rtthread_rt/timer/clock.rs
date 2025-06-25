@@ -1,3 +1,9 @@
+// ! 时钟模块
+// ! 
+// ! 定义了时钟相关的函数和变量
+
+#![warn(unused_imports)]
+
 use lazy_static::lazy_static;
 use crate::rtthread_rt::kservice::RTIntrFreeCell;
 // use crate::rtthread::thread::RtThread;
@@ -8,26 +14,24 @@ use crate::rtthread_rt::rtdef::RT_THREAD_STAT_YIELD;
 //调试
 // use cortex_m_semihosting::hprintln;
 
-// 线程让出标志
-// pub const RT_THREAD_STAT_YIELD: u8 = 0x08;在rtdef.rs中定义
 pub const RT_WAITING_FOREVER: u32 = 0xFFFFFFFF;
 
-// 定义全局变量：当前时钟，使用RTIntrFreeCell包裹，实现中断安全
+/// 定义全局变量：当前时钟，使用RTIntrFreeCell包裹，实现中断安全
 lazy_static! {
     static ref RT_TICK: RTIntrFreeCell<u32> = unsafe { RTIntrFreeCell::new(0) };
 }
 
-// 获取当前时钟周期
+/// 获取当前时钟周期
 pub fn rt_tick_get() -> u32 {
     *RT_TICK.exclusive_access()
 }
 
-// 设置当前时钟周期
+/// 设置当前时钟周期
 pub fn rt_tick_set(tick: u32) {
     *RT_TICK.exclusive_access() = tick;
 }
 
-//时钟中断处理函数
+/// 时钟中断处理函数
 pub fn rt_tick_increase() {
 
     let level = rt_hw_interrupt_disable();
@@ -49,7 +53,7 @@ pub fn rt_tick_increase() {
     // hprintln!("Current tick: {}", rt_tick_get());
 }
 
-// 将毫秒转换为时钟周期
+/// 将毫秒转换为时钟周期
 pub fn rt_tick_from_millisecond(ms: i32) -> u32 {
     if ms < 0 {
         RT_WAITING_FOREVER
@@ -60,7 +64,7 @@ pub fn rt_tick_from_millisecond(ms: i32) -> u32 {
     }
 }
 
-// 获取自启动以来经过的毫秒数
+/// 获取自启动以来经过的毫秒数
 pub fn rt_tick_get_millisecond() -> u32 {
     if 1000 % RT_TICK_PER_SECOND == 0 {
         rt_tick_get() * (1000 / RT_TICK_PER_SECOND)

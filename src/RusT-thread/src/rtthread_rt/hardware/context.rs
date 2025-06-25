@@ -1,6 +1,8 @@
-//! 线程上下文切换模块
+//! 线程上下文切换模块-Cortex-M4
 //! 
 //! 使用内联汇编实现线程上下文保存与恢复
+
+#![warn(unused_imports)]
 
 use cortex_m;
 use cortex_m_rt;
@@ -296,13 +298,4 @@ pub unsafe extern "C" fn HardFault_Handler() {
         );
     }
     hprintln!("HardFault_Handler exited");
-}
-
-/// 硬件错误处理实现
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rt_hw_hard_fault_exception(context: *mut core::ffi::c_void) {
-    #[cfg(feature = "debug")]
-    hprintln!("HARDFAULT! System halted.");
-    
-    loop {}
 }

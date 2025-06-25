@@ -1,3 +1,8 @@
+// ! 本模块是RT-Thread的配置模块
+// ! 包含了RT-Thread的配置信息
+
+#![warn(unused_imports)]
+
 /// 最大优先级
 pub const RT_THREAD_PRIORITY_MAX: usize = 32;
 
@@ -15,6 +20,9 @@ pub const RT_USING_COMPONENTS_INIT: bool = true;
 
 /// 使用用户主函数
 pub const RT_USING_USER_MAIN: bool = true;
+
+/// 内核栈大小
+pub const KERNEL_STACK_SIZE: usize = 0x400;//1kB
 
 /// 用户主线程优先级
 pub const RT_MAIN_THREAD_PRIORITY: u32 = 0;

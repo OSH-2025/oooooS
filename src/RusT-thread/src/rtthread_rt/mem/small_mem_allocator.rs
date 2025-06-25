@@ -1,6 +1,6 @@
-use crate::rtthread_rt::mem::mem::{rt_smem_init, rt_smem_detach, rt_smem_alloc, rt_smem_realloc, rt_smem_free};
-use crate::rtthread_rt::mem::mem::RTSmemT;
-use crate::rtthread_rt::mem::mem::RTSmallMem;
+use crate::rtthread_rt::mem::small_mem_impl::{rt_smem_init, rt_smem_detach, rt_smem_alloc, rt_smem_realloc, rt_smem_free};
+use crate::rtthread_rt::mem::small_mem_impl::RTSmemT;
+use crate::rtthread_rt::mem::small_mem_impl::RTSmallMem;
 
 /// 安全的内存分配器包装
 pub struct MemAllocator {

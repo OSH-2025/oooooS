@@ -1,5 +1,6 @@
-//! RT-Thread core definitions
-//! This module contains the basic type definitions and core structures for RT-Thread
+// ! RT-Thread core definitions
+// ! 本模块包含了RT-Thread的核心定义
+// ! 包括基本类型定义、核心结构体等
 
 use core::ffi::c_void;
 use core::ptr;
@@ -12,31 +13,6 @@ use spin::Mutex;
 
 use crate::rtthread_rt::rtconfig;
 
-/// Basic type definitions
-#[deprecated(since = "0.1.0", note = "Use native types i8 instead")]
-pub type rt_int8_t = i8;
-#[deprecated(since = "0.1.0", note = "Use native types u8 instead")]
-pub type rt_uint8_t = u8;
-#[deprecated(since = "0.1.0", note = "Use native types i16 instead")]
-pub type rt_int16_t = i16;
-#[deprecated(since = "0.1.0", note = "Use native types u16 instead")]
-pub type rt_uint16_t = u16;
-#[deprecated(since = "0.1.0", note = "Use native types i32 instead")]
-pub type rt_int32_t = i32;
-#[deprecated(since = "0.1.0", note = "Use native types u32 instead")]
-pub type rt_uint32_t = u32;
-#[deprecated(since = "0.1.0", note = "Use native types i64 instead")]
-pub type rt_int64_t = i64;
-#[deprecated(since = "0.1.0", note = "Use native types u64 instead")]
-pub type rt_uint64_t = u64;
-#[deprecated(since = "0.1.0", note = "Use native types usize instead")]
-pub type rt_size_t = usize;
-#[deprecated(since = "0.1.0", note = "Use native types bool instead")]
-pub type rt_bool_t = bool;
-#[deprecated(since = "0.1.0", note = "Use native types isize instead")]
-pub type rt_base_t = isize;
-#[deprecated(since = "0.1.0", note = "Use native types usize instead")]
-pub type rt_ubase_t = usize;
 
 #[deprecated(since = "0.1.0", note = "Use UpperCamelCase RtErrT instead")]
 pub type rt_err_t = isize;

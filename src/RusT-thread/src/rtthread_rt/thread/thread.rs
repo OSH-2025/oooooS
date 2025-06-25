@@ -26,7 +26,7 @@ use alloc::alloc::{
 use cortex_m_semihosting::hprintln;
 
 
-pub const KERNEL_STACK_SIZE: usize = 0x400;//1kB
+
 
 lazy_static! {
     /// 总的线程列表，用户可从中获取所有线程
@@ -182,7 +182,6 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
 
 /// 获取当前线程
 /// @return 当前线程对象
-
 pub fn rt_thread_self() -> Arc<RtThread> {
     get_current_thread()
 }

@@ -1,3 +1,9 @@
+// ! 对象管理模块
+// ! 
+// ! 定义了对象管理相关的函数和类型
+
+#![warn(unused_imports)]
+
 use crate::rtthread_rt::rtconfig::RT_NAME_MAX;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -6,7 +12,7 @@ use crate::rtthread_rt::mem::safelist::SafeRTList;
 extern crate alloc;
 use alloc::vec::Vec;
 
-/// Object structure
+/// 对象结构体
 #[repr(C)]
 pub struct RTObject {
     /// 用来储存对象的名称的数组
@@ -18,12 +24,12 @@ pub struct RTObject {
 }
 
 
-// 简单的ID生成器和对象存储系统
+/// 简单的ID生成器和对象存储系统
 static NEXT_OBJECT_ID: AtomicUsize = AtomicUsize::new(1); // 每次生成一个新的对象，这个ID就会加1
 
 
 
-// 对象映射表（因为这是单线程环境中的全局变量，不需要线程安全）
+/// 对象映射表（因为这是单线程环境中的全局变量，不需要线程安全）
 pub struct ObjectRegistry {
     // 存储对象和ID的映射关系
     id_to_ptr: UnsafeCell<Vec<*mut RTObject>>,
@@ -32,12 +38,14 @@ pub struct ObjectRegistry {
 unsafe impl Sync for ObjectRegistry {}
 
 impl ObjectRegistry {
+    /// 创建一个新的对象映射表
     pub const fn new() -> Self {
         Self {
             id_to_ptr: UnsafeCell::new(Vec::new()),
         }
     }
 
+    /// 注册一个对象
     pub fn register(&self, object: *mut RTObject) -> usize {
         let id = NEXT_OBJECT_ID.fetch_add(1, Ordering::SeqCst);
         
@@ -56,6 +64,7 @@ impl ObjectRegistry {
         id
     }
     
+    /// 注销一个对象
     pub fn unregister(&self, id: usize) {
         unsafe {
             let vec = &mut *self.id_to_ptr.get();
@@ -65,6 +74,7 @@ impl ObjectRegistry {
         }
     }
     
+    /// 获取一个对象
     pub fn get_object(&self, id: usize) -> *mut RTObject {
         unsafe {
             let vec = &*self.id_to_ptr.get();
@@ -76,6 +86,7 @@ impl ObjectRegistry {
         }
     }
     
+    /// 查找一个对象的ID
     pub fn find_id(&self, object: *mut RTObject) -> Option<usize> {
         unsafe {
             let vec = &*self.id_to_ptr.get();
@@ -89,18 +100,18 @@ impl ObjectRegistry {
     }
 }
 
-// 全局对象注册表
+/// 全局对象注册表
 pub static OBJECT_REGISTRY: ObjectRegistry = ObjectRegistry::new();
 
 
-// 全局对象链表（静态常量初始化）
+/// 全局对象链表（静态常量初始化）
 static OBJECT_LIST: SafeRTList = SafeRTList::new();
 
 
-/// Initialize an object - 公开此函数
+/// 初始化一个对象
 pub fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
     unsafe {
-        // Copy name with limited length
+        // 复制名称，限制长度
         ptr::write_bytes(&mut (*object).name, 0, (*object).name.len());
         let name_bytes = name.as_bytes();
         let copy_len = core::cmp::min(name_bytes.len(), (*object).name.len());
@@ -110,7 +121,7 @@ pub fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
             copy_len
         );
         
-        // Set type and flags
+        // 设置类型和标志
         (*object).obj_type = obj_type;
         (*object).flag = 0;
         
@@ -119,7 +130,7 @@ pub fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
     }
 }
 
-/// Detach an object - 公开此函数
+/// 分离一个对象
 pub fn rt_object_detach(object: *mut RTObject) {
     // 从安全链表中移除
     OBJECT_LIST.remove(object);

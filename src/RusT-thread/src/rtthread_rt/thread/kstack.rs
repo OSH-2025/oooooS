@@ -1,3 +1,9 @@
+// ! 内核栈
+// ! 
+// ! 定义了内核栈的结构体和相关函数
+
+#![warn(unused_imports)]
+
 use lazy_static::lazy_static;
 
 extern crate alloc;
@@ -21,12 +27,17 @@ use alloc::alloc::{
 use cortex_m_semihosting::hprintln;
 
 
+/// 内核栈结构体
+/// 注意：内核栈的地址是向下增长的，即栈底在高地址（更大），栈顶在低地址（更小）
 pub struct KernelStack {
+    /// 内核栈的底部地址
     bottom: usize,
+    /// 内核栈的大小，单位是字节
     size: usize,
 }
 
 impl KernelStack {
+    /// 创建一个新的内核栈
     pub fn new(size: usize) -> Self {
         // ! fixme:功能不稳定：若size = 200 时会停在Alloc。
         // ! size = 1024可正常工作。
@@ -38,30 +49,29 @@ impl KernelStack {
         KernelStack { bottom, size }
     }
 
+    /// 创建一个空的内核栈
     pub fn new_empty() -> Self {
         KernelStack { bottom: 0, size: 0 }
     }
 
-
+    /// 获取内核栈的大小
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// 获取内核栈的底部地址
     pub fn bottom(&self) -> usize {
         self.bottom
     }
 
+    /// 获取内核栈的顶部地址
     pub fn top(&self) -> usize {
         self.bottom + self.size
     }
 
-    pub fn init(&self,entry: usize,parameter: usize,texit: usize) {
-        unsafe {
-            
-        }
-    }
 }
 
+/// 内核栈的析构函数
 impl Drop for KernelStack {
     fn drop(&mut self) {
         if self.bottom != 0 {

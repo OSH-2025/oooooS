@@ -7,6 +7,8 @@
 //! - rt_interrupt_get_nest：获取当前中断嵌套层数。
 //! - rt_interrupt_enter_sethook/leave_sethook：设置中断进入/退出钩子（需启用hook特性）。
 
+#![warn(unused_imports)]
+
 use core::arch::asm;
 use cortex_m_semihosting::hprintln;
 use lazy_static::lazy_static;
