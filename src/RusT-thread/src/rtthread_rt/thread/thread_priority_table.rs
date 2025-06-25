@@ -1,3 +1,10 @@
+//! 线程优先级表
+//! 
+//! 本模块实现了RT-Thread的线程优先级表
+//! 包括线程的创建、启动、停止、控制等
+
+#![warn(unused_imports)]
+
 use lazy_static::lazy_static;
 extern crate alloc;
 use alloc::collections::VecDeque;

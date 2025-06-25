@@ -1,5 +1,5 @@
-// ! 本模块是RT-Thread的根模块
-// ! 包含了RT-Thread的所有模块
+//! 本模块是RT-Thread的根模块
+//! 包含了RT-Thread的所有模块
 
 #![warn(unused_imports)]        // 未使用的导入
 #![warn(missing_docs)]

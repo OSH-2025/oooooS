@@ -1,7 +1,7 @@
-// ! 内存分配器
-// ! 
-// ! 定义了内存分配器，并给出了对应的init_heap函数(堆初始化函数)
-// ! 默认使用buddy_system_allocator
+//! 内存分配器
+//! 
+//! 定义了内存分配器，并给出了对应的init_heap函数(堆初始化函数)
+//! 默认使用buddy_system_allocator
 
 #![warn(unused_imports)]
 

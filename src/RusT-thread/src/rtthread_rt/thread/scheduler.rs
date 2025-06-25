@@ -1,7 +1,7 @@
-// ! 调度器相关函数
-// ! 
-// ! 结构体：Scheduler
-// ! 函数：rt_schedule、rt_schedule_start、rt_schedule_lock、rt_schedule_unlock、remove_thread、insert_thread、get_current_thread、get_highest_priority、get_highest_priority_thread、pop_thread、output_priority_table
+//! 调度器相关函数
+//! 
+//! 结构体：Scheduler
+//! 函数：rt_schedule、rt_schedule_start、rt_schedule_lock、rt_schedule_unlock、remove_thread、insert_thread、get_current_thread、get_highest_priority、get_highest_priority_thread、pop_thread、output_priority_table
 
 use lazy_static::lazy_static;
 extern crate alloc;

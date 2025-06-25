@@ -3,17 +3,10 @@
 
 #![allow(warnings)]
 
-// pick a panicking behavior
 use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
-// use panic_abort as _; // requires nightly
-// use panic_itm as _; // logs messages over ITM; requires ITM support
-// use panic_semihosting as _; // logs messages to the host stderr; requires a debugger
-
-
 use cortex_m::asm;
 use cortex_m_rt::{entry, exception}; // 引入 exception 宏
 use cortex_m_semihosting::hprintln;
-
 // 引入 stm32f4xx-hal crate
 use stm32f4xx_hal::{
     prelude::*, // 引入一些常用的 trait 和类型
@@ -22,10 +15,13 @@ use stm32f4xx_hal::{
     // flash::FlashExt, // 根据需要引入 Flash 扩展
     // power::Dbgmcu, // 根据需要引入 Debug MCU
 };
-
 // use fugit::RateExtU32; // 引入频率单位扩展 trait
 
 mod rtthread_rt;
+mod test;
+mod user_main;
+
+use user_main::main_entry;
 use rtthread_rt::rtconfig;
 use rtthread_rt::thread::{
     thread,
@@ -33,11 +29,9 @@ use rtthread_rt::thread::{
     scheduler,
     thread_priority_table,
 };
-mod test;
 
-
-// --- SysTick 中断处理函数 ---
-// 使用 #[exception] 宏将此函数标记为 SysTick 中断处理程序
+/// --- SysTick 中断处理函数 ---
+/// 使用 #[exception] 宏将此函数标记为 SysTick 中断处理程序
 #[exception]
 unsafe fn SysTick() {
     // 在 SysTick ISR 中调用 rt_tick_increase
@@ -57,9 +51,9 @@ fn entry() -> ! {
     init();
     
     if cfg!(feature = "test") {
-        hprintln!("Running tests...");
+        // hprintln!("Running tests...");
         test::run_all_tests();
-        hprintln!("Tests finished.");
+        // hprintln!("Tests finished.");
     }
 
     //在此处初始化线程，并启动调度器（将跳转到主线程入口）
@@ -72,8 +66,12 @@ fn entry() -> ! {
     }
 }
 
+/// 初始化函数
+/// 初始化硬件、内存、定时器等
 fn init() {
     // hprintln!("Initializing...");
+
+
     // 获取外设的所有权
     let dp = pac::Peripherals::take().unwrap();
     let cp = cortex_m::Peripherals::take().unwrap();
@@ -105,18 +103,5 @@ fn init_thread() {
     // hprintln!("Thread initialized.");
 }
 
-// 用户主线程入口
-pub extern "C" fn main_entry(arg: usize) -> () {
-    hprintln!("main_entry...");
-    // 用户主线程入口
-    loop{
-        asm::nop;
-    }
-}
 
-// ! 测试注意
-// ! 推荐的测试方式是单独写一个测试文件，
-// ! 例如 `test_xxx.rs`，然后在 `Cargo.toml` 中添加对应的测试条件编译
-// ! 例如 test_xxx = []
-// ! 在test/mod.rs中使用 `#[cfg(test_xxx)]` 来包含测试代码。
-// ! 这样可以避免在主程序中引入测试代码，保持代码的整洁性和可维护性。
+

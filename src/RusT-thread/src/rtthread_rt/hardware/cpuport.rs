@@ -1,7 +1,7 @@
-// ! CPU接口-Cortex-M4
-// ! 
-// ! 定义了异常栈帧、栈帧、CPU关机、CPU重启
-// ! 并给出了对应的hw_stack_init函数(栈初始化函数)
+//! CPU接口-Cortex-M4
+//! 
+//! 定义了异常栈帧、栈帧、CPU关机、CPU重启
+//! 并给出了对应的hw_stack_init函数(栈初始化函数)
 
 #![warn(unused_imports)]
 

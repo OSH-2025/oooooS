@@ -1,6 +1,6 @@
-// ! 线程模块
-// ! 
-// ! 本模块实现了RT-Thread的线程管理功能
+//! 线程模块
+//! 
+//! 本模块实现了RT-Thread的线程管理功能
 
 pub mod thread;
 pub mod scheduler;

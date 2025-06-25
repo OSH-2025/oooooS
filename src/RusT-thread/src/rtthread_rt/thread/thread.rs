@@ -1,7 +1,7 @@
-// ! 线程相关函数
-// ! 
-// ! 结构体：RtThread、RtThreadInner
-// ! 函数：rt_thread_create、rt_thread_self、rt_thread_delete、rt_thread_startup、rt_thread_suspend、rt_thread_sleep、rt_thread_control、rt_thread_resume、rt_thread_yield
+//! 线程相关函数
+//! 
+//! 结构体：RtThread、RtThreadInner
+//! 函数：rt_thread_create、rt_thread_self、rt_thread_delete、rt_thread_startup、rt_thread_suspend、rt_thread_sleep、rt_thread_control、rt_thread_resume、rt_thread_yield
 
 use lazy_static::lazy_static;
 

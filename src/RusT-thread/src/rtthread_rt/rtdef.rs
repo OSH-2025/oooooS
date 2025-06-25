@@ -1,6 +1,6 @@
-// ! RT-Thread core definitions
-// ! 本模块包含了RT-Thread的核心定义
-// ! 包括基本类型定义、核心结构体等
+//! RT-Thread core definitions
+//! 本模块包含了RT-Thread的核心定义
+//! 包括基本类型定义、核心结构体等
 
 use core::ffi::c_void;
 use core::ptr;

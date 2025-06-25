@@ -1,5 +1,5 @@
-// ! 本模块是RT-Thread的配置模块
-// ! 包含了RT-Thread的配置信息
+//! 本模块是RT-Thread的配置模块
+//! 包含了RT-Thread的配置信息
 
 #![warn(unused_imports)]
 

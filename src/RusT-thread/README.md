@@ -2,15 +2,51 @@
 
 ## 项目结构
 
-该项目包含以下几个模块：
-
-- `src/mem`：内存管理模块，包含内存分配、释放、重分配等功能。
-- `src/rtthread`：RT-Thread内核模块，包含线程管理、调度等功能。
-- `src/rtconfig`：RT-Thread配置模块，包含RT-Thread的配置信息。
-- `src/context`：上下文切换模块，包含上下文切换的功能。
-- `src/irq`：中断管理模块，包含中断管理的功能。
-- `src/clock`&`src/timer`：时钟管理模块，包含时钟管理的功能。
-- `src/ipc`：进程间通信模块，包含进程间通信的功能。
+oooooS/src/RusT-thread/src
+├── main.rs                           // 程序入口点，初始化硬件、内存、定时器和线程系统
+├── rtthread_rt                       // RT-Thread实时操作系统核心模块
+│   ├── hardware                      // 硬件抽象层，提供与硬件相关的底层功能
+│   │   ├── context.rs                // 线程上下文切换实现
+│   │   ├── cpuport.rs                // CPU端口相关函数，栈初始化和CPU控制
+│   │   ├── exception.rs              // 异常处理机制
+│   │   ├── irq.rs                    // 中断请求处理
+│   │   └── mod.rs                    // 硬件模块统一导出
+│   ├── ipc.rs                        // 进程间通信机制
+│   ├── kservice                      // 内核服务模块
+│   │   ├── cell.rs                   // 内核服务单元实现
+│   │   └── mod.rs                    // 内核服务模块统一导出
+│   ├── mem                           // 内存管理模块
+│   │   ├── allocator.rs              // 内存分配器实现
+│   │   ├── mod.rs                    // 内存管理模块统一导出
+│   │   ├── object.rs                 // 内核对象管理
+│   │   ├── oom.rs                    // 内存不足处理
+│   │   ├── safelist.rs               // 线程安全链表实现
+│   │   ├── small_mem_allocator.rs    // 小内存分配器
+│   │   └── small_mem_impl.rs         // 小内存分配器具体实现
+│   ├── mod.rs                        // RT-Thread根模块，统一导出所有子模块
+│   ├── rtconfig.rs                   // RT-Thread配置参数
+│   ├── rtdef.rs                      // RT-Thread核心定义和常量
+│   ├── thread                        // 线程管理模块
+│   │   ├── idle.rs                   // 空闲线程实现
+│   │   ├── kstack.rs                 // 内核栈管理
+│   │   ├── mod.rs                    // 线程模块统一导出
+│   │   ├── scheduler.rs              // 线程调度器实现
+│   │   ├── thread.rs                 // 线程核心实现
+│   │   └── thread_priority_table.rs  // 线程优先级表管理
+│   └── timer                         // 定时器模块
+│       ├── clock.rs                  // 系统时钟管理
+│       ├── mod.rs                    // 定时器模块统一导出
+│       └── timer.rs                  // 定时器核心实现
+├── test                              // 测试模块
+│   ├── mod.rs                        // 测试模块统一导出和测试运行入口
+│   ├── test_excp.rs                  // 异常处理测试
+│   ├── test_interupt.rs              // 中断处理测试
+│   ├── test_mem.rs                   // 内存管理测试
+│   ├── test_scheduler.rs             // 调度器测试
+│   ├── test_small_mem.rs             // 小内存分配器测试
+│   ├── test_thread.rs                // 线程功能测试
+│   └── test_timer.rs                 // 定时器功能测试
+└── user_main.rs                      // 用户主线程入口，用户应用程序逻辑实现
 
 ## 项目实现
 
@@ -36,6 +72,3 @@
 
 在编译时添加 `test` 特性，即可运行测试用例。
 在test目录下，有测试用例。
-
-
-

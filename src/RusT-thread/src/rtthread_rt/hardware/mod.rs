@@ -1,6 +1,6 @@
-// ! 硬件相关函数-Cortex-M4
-// ! 
-// ! 定义了线程上下文切换、异常处理、中断处理、CPU相关函数
+//! 硬件相关函数-Cortex-M4
+//! 
+//! 定义了线程上下文切换、异常处理、中断处理、CPU相关函数
 
 pub mod context;
 pub mod cpuport;

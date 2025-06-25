@@ -1,3 +1,11 @@
+//! 测试（也可以是示例代码）
+//! 
+//! 推荐的测试方式是单独写一个测试文件，
+//! 例如 `test_xxx.rs`，然后在 `Cargo.toml` 中添加对应的测试条件编译
+//! 例如 test_xxx = []
+//! 在test/mod.rs中使用 `#[cfg(test_xxx)]` 来包含测试代码。
+//! 这样可以避免在主程序中引入测试代码，保持代码的整洁性和可维护性。
+
 #![allow(warnings)]
 pub mod test_thread;
 pub mod test_mem;

@@ -1,6 +1,6 @@
-// ! 内核栈
-// ! 
-// ! 定义了内核栈的结构体和相关函数
+//! 内核栈
+//! 
+//! 定义了内核栈的结构体和相关函数
 
 #![warn(unused_imports)]
 
@@ -39,8 +39,8 @@ pub struct KernelStack {
 impl KernelStack {
     /// 创建一个新的内核栈
     pub fn new(size: usize) -> Self {
-        // ! fixme:功能不稳定：若size = 200 时会停在Alloc。
-        // ! size = 1024可正常工作。
+        //! fixme:功能不稳定：若size = 200 时会停在Alloc。
+        //! size = 1024可正常工作。
         // hprintln!("KernelStack::new: enter");
         let bottom = unsafe {
             alloc(Layout::from_size_align(size, size).unwrap()) as usize
