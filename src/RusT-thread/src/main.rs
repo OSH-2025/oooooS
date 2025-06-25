@@ -31,6 +31,7 @@ use rtthread_rt::thread::{
     thread,
     idle,
     scheduler,
+    thread_priority_table,
 };
 mod test;
 
@@ -61,7 +62,9 @@ fn entry() -> ! {
         hprintln!("Tests finished.");
     }
 
+    //在此处初始化线程，并启动调度器（将跳转到主线程入口）
     init_thread();
+    // 此后代码不会被执行
 
     loop {
         panic!("程序不应该运行到这里，请检查初始化是否正确");
@@ -96,7 +99,7 @@ fn init_thread() {
     idle::init_idle();
     // 创建用户主线程
     let main = thread::rt_thread_create("main", main_entry as usize, rtconfig::RT_MAIN_THREAD_STACK_SIZE as usize, rtconfig::RT_MAIN_THREAD_PRIORITY as u8, 1000);
-    scheduler::insert_thread(main.clone());
+    thread_priority_table::insert_thread(main.clone());
     // 启动调度器
     scheduler::rt_schedule_start();
     // hprintln!("Thread initialized.");

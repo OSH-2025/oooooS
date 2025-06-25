@@ -1,5 +1,6 @@
-use crate::rtthread_rt::thread::scheduler::*;
-use crate::rtthread_rt::thread::thread::{RtThread, rt_thread_create};
+use crate::rtthread_rt::thread::scheduler::{rt_schedule, rt_schedule_start};
+use crate::rtthread_rt::thread::thread::{rt_thread_create};
+use crate::rtthread_rt::thread::thread_priority_table::{insert_thread, remove_thread, pop_thread, get_highest_priority, get_highest_priority_thread, output_priority_table};
 use crate::rtthread_rt::rtdef::ThreadState;
 use cortex_m_semihosting::hprintln;
 

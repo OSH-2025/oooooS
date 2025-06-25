@@ -11,7 +11,6 @@ use cortex_m::peripheral::syst::SystClkSource;
 
 //由于rust中可以使用高级容器：动态数组，所以不需要使用链表（跳表）算法来加速
 //定时器的查找，而可以使用二分查找，所以我们决定把定时器存放在动态数组中
-
 pub const RT_TIMER_FLAG_ACTIVATED: u8 = 0x1;
 // Assuming 0x2 is RT_TIMER_FLAG_PERIODIC based on usage
 const RT_TIMER_FLAG_PERIODIC: u8 = 0x2;

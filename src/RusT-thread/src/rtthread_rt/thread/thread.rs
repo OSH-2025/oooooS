@@ -1,3 +1,7 @@
+// ! 线程相关函数
+// ! 
+// ! 结构体：RtThread、RtThreadInner
+// ! 函数：rt_thread_create、rt_thread_self、rt_thread_delete、rt_thread_startup、rt_thread_suspend、rt_thread_sleep、rt_thread_control、rt_thread_resume、rt_thread_yield
 
 use lazy_static::lazy_static;
 
@@ -28,60 +32,6 @@ lazy_static! {
     /// 总的线程列表，用户可从中获取所有线程
     static ref RT_THREAD_LIST: RTIntrFreeCell<Vec<Arc<RtThread>>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
 
-}
-
-pub struct KernelStack {
-    bottom: usize,
-    size: usize,
-}
-
-impl KernelStack {
-    pub fn new(size: usize) -> Self {
-        // ! fixme:功能不稳定：若size = 200 时会停在Alloc。
-        // ! size = 1024可正常工作。
-        // hprintln!("KernelStack::new: enter");
-        let bottom = unsafe {
-            alloc(Layout::from_size_align(size, size).unwrap()) as usize
-        };
-        // hprintln!("KernelStack::new: bottom: {}", bottom);
-        KernelStack { bottom, size }
-    }
-
-    pub fn new_empty() -> Self {
-        KernelStack { bottom: 0, size: 0 }
-    }
-
-
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    pub fn bottom(&self) -> usize {
-        self.bottom
-    }
-
-    pub fn top(&self) -> usize {
-        self.bottom + self.size
-    }
-
-    pub fn init(&self,entry: usize,parameter: usize,texit: usize) {
-        unsafe {
-            
-        }
-    }
-}
-
-impl Drop for KernelStack {
-    fn drop(&mut self) {
-        if self.bottom != 0 {
-            unsafe {
-                dealloc(
-                    self.bottom as _,
-                    Layout::from_size_align(self.size, self.size).unwrap(),
-                );
-            }
-        }
-    }
 }
 
 pub struct RtThreadInner {
@@ -234,7 +184,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
 /// @return 当前线程对象
 
 pub fn rt_thread_self() -> Arc<RtThread> {
-    scheduler::get_current_thread()
+    get_current_thread()
 }
 
 
@@ -247,7 +197,7 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
         return RT_EOK;
     }
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Init as u8) {
-        scheduler::remove_thread(thread.clone());
+        remove_thread(thread.clone());
     }
     
     let level = rt_hw_interrupt_disable();
@@ -280,11 +230,11 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
     }
     */
 
-    // scheduler::rt_schedule();
+    // rt_schedule();
     // hprintln!("rt_thread_startup 5...");
     rt_hw_interrupt_enable(level);
     // hprintln!("rt_thread_startup 6...");
-    scheduler::rt_schedule();
+    rt_schedule();
     RT_EOK
 }
 
@@ -299,7 +249,7 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     }
 
     let level = rt_hw_interrupt_disable();
-    scheduler::remove_thread(thread.clone());
+    remove_thread(thread.clone());
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
     
     timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
@@ -330,7 +280,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
     
     timer::rt_timer_start(thread.inner.exclusive_access().timer.clone());
 
-    scheduler::rt_schedule();
+    rt_schedule();
 
     if thread.inner.exclusive_access().error == RT_ETIMEOUT {
         thread.inner.exclusive_access().error = RT_EOK;
@@ -354,14 +304,14 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
         },
         RT_THREAD_CTRL_CLOSE => {
             let rt_err = rt_thread_delete(thread);
-            scheduler::rt_schedule();
+            rt_schedule();
             rt_err
         }
         RT_THREAD_CTRL_CHANGE_PRIORITY => {
             let priority = arg; //todo
             let level = rt_hw_interrupt_disable();
             if thread.inner.exclusive_access().stat.get_stat() == (ThreadState::Ready as u8) {
-                scheduler::remove_thread(thread.clone());
+                remove_thread(thread.clone());
                 thread.inner.exclusive_access().current_priority = priority;
                 if cfg!(feature = "full_ffs") {
                     let number = priority >> 3;
@@ -371,7 +321,7 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
                 else {
                     thread.inner.exclusive_access().number_mask = 1 << priority;
                 }
-                scheduler::insert_thread(thread.clone());
+                insert_thread(thread.clone());
             }
             else {
                 thread.inner.exclusive_access().current_priority = priority;
@@ -402,7 +352,7 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
     
     // todo RT_THREAD_LIST.remove(thread.clone());未实现，可能不需要实现
 
-    scheduler::insert_thread(thread.clone());
+    thread_priority_table::insert_thread(thread.clone());
     // hprintln!("rt_thread_resume 2...");
     rt_hw_interrupt_enable(level);
     // hprintln!("rt_thread_resume 3...");
