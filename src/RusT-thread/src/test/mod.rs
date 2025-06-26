@@ -18,7 +18,7 @@ pub mod test_cell;
 pub mod performance_test;
 
 
-#[cfg(feature = "test_timer")]
+// #[cfg(feature = "test_timer")]
 pub mod test_timer;
 #[cfg(feature = "test_small_mem")]
 pub mod test_small_mem;
@@ -31,6 +31,8 @@ pub mod test_all;
 
 pub fn run_all_tests() {
     test_all::print_logo();
+
+    // test_timer::simple_timer_test();
 
     // test::test_small_mem::run_simple_mem_tests();
     // test_timer::run_all_timer_tests();

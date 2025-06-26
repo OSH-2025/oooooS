@@ -75,33 +75,37 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     let priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
     // 获取最高优先级的线程
     let mut to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority)?;
+    // hprintln!("to_thread: {:?} at priority: {}", to_thread, priority);
 
+    // hprintln!("current_thread: {:?} at priority: {}", scheduler.current_thread.clone().unwrap(), scheduler.current_priority);
+
+    
     // 是否需要将原线程重新插入就绪队列：true表示需要，false表示不需要
-    let mut need_insert_from_thread = true;
+    let mut need_insert_from_thread = false;
 
     // 检查当前线程状态
     if let Some(current_thread) = &scheduler.current_thread {
-        let current_stat = current_thread.inner.exclusive_access().stat;
-        
-        // 获取当前线程优先级
-        let current_priority = current_thread.inner.exclusive_access().current_priority;
-        // 当前线程优先级小于新线程优先级
-        if current_priority < priority {
-            // 当前线程优先级更高，继续运行当前线程
-            to_thread = current_thread.clone();
-        } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
-            // 优先级相同且未让出CPU，继续运行当前线程
-            to_thread = current_thread.clone();
-        } 
 
-        // 清除让出标志
-        current_thread.inner.exclusive_access().stat.clear_yield();
+        let current_stat = current_thread.inner.exclusive_access().stat;
 
         // 如果当前线程状态为运行，则需要将原线程重新插入就绪队列
         if current_stat.get_stat() == (ThreadState::Running as u8){
             need_insert_from_thread = true;
+            // 获取当前线程优先级
+            let current_priority = current_thread.inner.exclusive_access().current_priority;
+            // 当前线程优先级小于新线程优先级
+            if current_priority < priority {
+                // 当前线程优先级更高，继续运行当前线程
+                to_thread = current_thread.clone();
+            } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
+                // 优先级相同且未让出CPU，继续运行当前线程
+                to_thread = current_thread.clone();
+            }         
+            // 清除让出标志
+            current_thread.inner.exclusive_access().stat.clear_yield();
         } else {// 被挂起
             need_insert_from_thread = false;
+            // 不需要比较优先级，直接切换到新线程
         }
     }
     else {
@@ -158,7 +162,7 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
 
 pub fn rt_schedule() {
     // hprintln!("schedule");
-    hprintln!("current_thread: {:?}", get_current_thread());
+    // hprintln!("current_thread: {:?}", get_current_thread());
     // 关中断
     let level = rt_hw_interrupt_disable();
 

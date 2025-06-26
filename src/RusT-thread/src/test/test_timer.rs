@@ -1,10 +1,10 @@
 extern crate alloc;
-use crate::timer::{RtTimer, TimerHandle, rt_timer_start};
-use crate::rtdef::RtObject; // Assuming RtObject is needed for timer creation
 use alloc::sync::Arc;
 use spin::Mutex;
 use alloc::boxed::Box;
 use cortex_m_semihosting::hprintln;
+use cortex_m::asm;
+use crate::rtthread_rt::timer::{RtTimer, rt_timer_start, rt_tick_get};
 
 struct SharedCounter {
     count: u32,
@@ -55,3 +55,21 @@ pub fn run_all_timer_tests() {
     // let current_count = counter.lock().count;
     // println!("Current count from main: {}", current_count);
 }    
+
+pub fn simple_timer_test() {
+    let timer_callback = move || {
+        hprintln!("simple_timer_test");
+        hprintln!("rt_tick_get: {}", rt_tick_get());
+    };
+
+    let timer = Arc::new(Mutex::new(RtTimer::new(
+        "simple_timer_test", // name
+        0, // obj_type (example value)
+        0x2, // flag (assuming 0x2 is periodic)
+        Some(Box::new(timer_callback)), // timeout_func
+        1000, // init_tick (initial delay in ticks)
+        1000, // timeout_tick (period for periodic timers)
+    )));
+
+    rt_timer_start(timer.clone());
+}
