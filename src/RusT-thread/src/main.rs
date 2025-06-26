@@ -29,6 +29,7 @@ use rtthread_rt::thread::{
     scheduler,
     thread_priority_table,
 };
+use rtthread_rt::rtdef::ThreadState;
 
 /// --- SysTick 中断处理函数 ---
 /// 使用 #[exception] 宏将此函数标记为 SysTick 中断处理程序
@@ -97,6 +98,7 @@ fn init_thread() {
     idle::init_idle();
     // 创建用户主线程
     let main = thread::rt_thread_create("main", main_entry as usize, rtconfig::RT_MAIN_THREAD_STACK_SIZE as usize, rtconfig::RT_MAIN_THREAD_PRIORITY as u8, 1000);
+    main.inner.exclusive_access().stat = ThreadState::Ready;
     thread_priority_table::insert_thread(main.clone());
     // 启动调度器
     scheduler::rt_schedule_start();

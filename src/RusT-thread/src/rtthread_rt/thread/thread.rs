@@ -43,30 +43,47 @@ pub struct RtThreadInner {
     pub stat: ThreadState,
     
     /// current priority
+    /// 当前线程的优先级
     pub current_priority: u8,
     
     /// number mask
+    /// 这个字段用于记录线程的优先级掩码，用于快速计算线程的优先级
+    /// 仅在cfg(feature = "full_ffs")时使用
     pub number_mask: u32,
 
     /// high mask
+    /// 这个字段用于记录线程的优先级掩码，用于快速计算线程的优先级
+    /// 仅在cfg(feature = "full_ffs")时使用
     pub high_mask: u32,
 
     /// 线程相关信息
     pub entry: usize, // 函数入口
 
     /// tick
+    /// 线程的初始时间片
+    /// 静态，初始化时设置，之后不再改变
     pub init_tick: usize,
+    
+    /// 线程的剩余时间片
+    /// 动态，每次进入就绪队列时，剩余时间片被初始化为init_tick
+    /// 每个tick会减1，当剩余时间片为0时，让出CPU
     pub remaining_tick: usize,
 
     /// timer
-    pub timer: timer::TimerHandle,
+    /// 线程的睡眠定时器
+    /// 当线程进入睡眠状态时，会创建一个单次定时器，当定时器到期时，会唤醒线程
+    pub timer: Option<TimerHandle>,
 
     /// context
+    /// 线程的栈
     pub kernel_stack: KernelStack,
+
+    /// 线程的栈指针
     pub stack_pointer: u32,
     
 
     /// user data
+    /// 用户数据
     pub user_data: usize,
 }
 
@@ -149,8 +166,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     let timer_callback = move || {
         hprintln!("timer_callback");
     };
-    let timer = Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0)));
-    // hprintln!("timer in rt_thread_create");
+// hprintln!("timer in rt_thread_create");
     let inner =unsafe {
         RTIntrFreeCell::new(RtThreadInner {
         error: 0,
@@ -164,7 +180,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         kernel_stack,
         stack_pointer: stack_pointer as u32,
         user_data: 0,
-        timer,
+        timer: None,
         })
     };
     let mut name = [0u8; RT_NAME_MAX];
@@ -176,7 +192,6 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         cleanup: None,
     };
     let thread_arc = Arc::new(thread);
-    timer::rt_timer_start(thread_arc.clone().inner.exclusive_access().timer.clone());
     RT_THREAD_LIST.exclusive_access().push(thread_arc.clone()); 
     // hprintln!("rt_thread_create finished.");
     thread_arc
@@ -300,7 +315,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
     
     // 将定时器句柄保存到线程中，以便需要时可以停止
     // 注意：这里需要修改线程结构体以支持睡眠定时器
-    thread.inner.exclusive_access().timer = timer;
+    thread.inner.exclusive_access().timer = Some(timer);
 
     // 调用调度器让出CPU
     rt_schedule();
@@ -329,26 +344,8 @@ pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
             rt_err
         }
         RT_THREAD_CTRL_CHANGE_PRIORITY => {
-            let priority = arg; //todo
-            let level = rt_hw_interrupt_disable();
-            if thread.inner.exclusive_access().stat.get_stat() == (ThreadState::Ready as u8) {
-                remove_thread(thread.clone());
-                thread.inner.exclusive_access().current_priority = priority;
-                if cfg!(feature = "full_ffs") {
-                    let number = priority >> 3;
-                    thread.inner.exclusive_access().number_mask = 1 << number;
-                    thread.inner.exclusive_access().high_mask = 1 << (priority & 0x07);
-                }
-                else {
-                    thread.inner.exclusive_access().number_mask = 1 << priority;
-                }
-                insert_thread(thread.clone());
-            }
-            else {
-                thread.inner.exclusive_access().current_priority = priority;
-
-            }
-            rt_hw_interrupt_enable(level);
+            let priority = arg; // 优先级
+            rt_thread_set_priority(thread, priority);
             RT_EOK
         }
         _ => {
@@ -370,7 +367,6 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
     }
 
     let level = rt_hw_interrupt_disable();
-
     thread.inner.exclusive_access().stat = ThreadState::Ready;
     thread_priority_table::insert_thread(thread.clone());
     rt_hw_interrupt_enable(level);
@@ -391,5 +387,46 @@ pub fn rt_thread_yield() -> RtErrT {
     }
     rt_hw_interrupt_enable(level);
     scheduler::rt_schedule();
+    RT_EOK
+}
+
+
+pub fn rt_thread_set_priority(thread: Arc<RtThread>, priority: u8) -> RtErrT {
+    hprintln!("rt_thread_set_priority: {:?} to {}", thread, priority);
+    if usize::from(priority) > RT_THREAD_PRIORITY_MAX {
+        return RT_ERROR;
+    }
+    let mut inner = thread.inner.exclusive_access();
+    inner.current_priority = priority;
+    let level = rt_hw_interrupt_disable();
+    if inner.stat.get_stat() == (ThreadState::Ready as u8) {// 如果线程在就绪队列中，则将其从就绪队列中移除再插入
+        remove_thread(thread.clone());
+        inner.current_priority = priority;
+        if cfg!(feature = "full_ffs") {
+            let number = priority >> 3;
+            inner.number_mask = 1 << number;
+            inner.high_mask = 1 << (priority & 0x07);
+        }
+        else {
+            inner.number_mask = 1 << priority;
+        }
+        insert_thread(thread.clone());
+    }
+    else if inner.stat.get_stat() == (ThreadState::Running as u8) {// 如果线程在运行状态，则直接设置优先级
+        inner.current_priority = priority;
+        RT_SCHEDULER.exclusive_access().set_current_priority(priority);
+    }
+    else {// 如果线程不在就绪队列中，则直接设置优先级
+        inner.current_priority = priority;
+        if cfg!(feature = "full_ffs") {
+            let number = priority >> 3;
+            inner.number_mask = 1 << number;
+            inner.high_mask = 1 << (priority & 0x07);
+        }
+        else {
+            inner.number_mask = 1 << priority;
+        }
+    }
+    rt_hw_interrupt_enable(level);
     RT_EOK
 }

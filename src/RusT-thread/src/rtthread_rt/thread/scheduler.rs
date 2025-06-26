@@ -46,6 +46,10 @@ impl Scheduler {
     pub fn get_current_thread(&self) -> Option<Arc<RtThread>> {
         self.current_thread.clone()
     }
+
+    pub fn set_current_priority(&mut self, priority: u8) {
+        self.current_priority = priority;
+    }
 }
 
 fn switch_to_thread(thread: Arc<RtThread>) {
@@ -75,10 +79,19 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     let priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
     // 获取最高优先级的线程
     let mut to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority)?;
+    
+    // 验证线程状态是否为Ready
+    let thread_stat = to_thread.inner.exclusive_access().stat.get_stat();
+    if thread_stat != (ThreadState::Ready as u8) {
+        hprintln!("Warning: Found non-Ready thread in priority table. Thread state: {}, removing from table.", thread_stat);
+        // 移除状态不正确的线程
+        RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(to_thread.clone());
+        // 重新获取下一个线程
+        to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority)?;
+    }
+    
     // hprintln!("to_thread: {:?} at priority: {}", to_thread, priority);
-
     // hprintln!("current_thread: {:?} at priority: {}", scheduler.current_thread.clone().unwrap(), scheduler.current_priority);
-
     
     // 是否需要将原线程重新插入就绪队列：true表示需要，false表示不需要
     let mut need_insert_from_thread = false;
@@ -129,6 +142,24 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
         to_thread.inner.exclusive_access().stat = ThreadState::Running;
         None
     }
+}
+
+#[cfg(feature = "MFQ")]
+/// 老化算法
+/// 
+/// 如果启用MFQ（多级反馈队列），则需要使用老化算法
+/// 
+/// 常见的实现是：
+/// 
+/// 新创建的线程从最高优先级开始
+/// 如果线程用完时间片，降低其优先级
+/// 如果线程主动让出CPU，保持当前优先级
+/// 低优先级线程会逐渐提升优先级，防止饥饿
+/// 
+/// 故在每次线程切换时，调用以下函数，实现优先级的动态调整
+/// 
+/// 
+fn Aging(){
 }
 
 fn execute_thread_switch(context: ThreadSwitchContext) {

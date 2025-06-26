@@ -31,7 +31,8 @@ pub use self::thread::{
     rt_thread_resume,
     rt_thread_suspend,
     rt_thread_control,
-    rt_thread_sleep
+    rt_thread_sleep,
+    rt_thread_set_priority
 };
 pub use self::thread_priority_table::{
     ThreadPriorityTable,

@@ -86,14 +86,16 @@ impl ThreadPriorityTable {
     }
 
     pub fn insert_thread(&mut self, thread: Arc<RtThread>) {
-        // hprintln!("insert_thread: ");
+        // 检查线程状态，只有Ready状态的线程才能插入优先级列表
+        let thread_stat = thread.inner.exclusive_access().stat.get_stat();
+        if thread_stat != (ThreadState::Ready as u8) {
+            hprintln!("Warning: Attempting to insert non-Ready thread into priority table. Thread state: {}", thread_stat);
+            return;
+        }
+        
         let priority = thread.inner.exclusive_access().current_priority;
-        // hprintln!("insert_thread 1");
         self.table[priority as usize].push_back(thread.clone());
-        // hprintln!("insert_thread 2");
         self.tag_on_priority(priority);
-        // hprintln!("insert_thread 3");
-        // hprintln!("insert_thread: priority: {}, thread: {:?}", &priority, &thread);
     }
 
     pub fn remove_thread(&mut self,thread: Arc<RtThread>) {
@@ -115,6 +117,13 @@ impl ThreadPriorityTable {
     
     /// 将线程添加到指定优先级的队列末尾
     pub fn push_back_to_priority(&mut self, priority: u8, thread: Arc<RtThread>) {
+        // 检查线程状态，只有Ready状态的线程才能插入优先级列表
+        let thread_stat = thread.inner.exclusive_access().stat.get_stat();
+        if thread_stat != (ThreadState::Ready as u8) {
+            hprintln!("Warning: Attempting to insert non-Ready thread into priority table. Thread state: {}", thread_stat);
+            return;
+        }
+        
         self.table[priority as usize].push_back(thread);
         self.tag_on_priority(priority);
     }
@@ -158,6 +167,21 @@ impl ThreadPriorityTable {
     fn tag_on_priority(&mut self, priority: u8) {
         self.ready_priority_group |= 1 << priority;
     }
+
+    /// 检查优先级列表的一致性
+    /// 验证所有在优先级列表中的线程状态是否为Ready
+    pub fn validate_consistency(&self) -> bool {
+        for priority in 0..RT_THREAD_PRIORITY_MAX {
+            for thread in &self.table[priority] {
+                let thread_stat = thread.inner.exclusive_access().stat.get_stat();
+                if thread_stat != (ThreadState::Ready as u8) {
+                    hprintln!("Inconsistency found: Thread {:?} in priority table with state {}", thread, thread_stat);
+                    return false;
+                }
+            }
+        }
+        true
+    }
 }
 
 
@@ -192,6 +216,7 @@ pub fn __rt_ffs(value: u32) -> u8 {
 }
 
 #[cfg(feature = "full_ffs")]
+// todo: full_ffs 尚未调试完成，难以保证正确性
 const __LOWEST_BIT_BITMAP: [u8; 256] = [
     /* 00 */ 0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
     /* 10 */ 4, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0,
