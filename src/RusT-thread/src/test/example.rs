@@ -61,7 +61,8 @@ pub fn run_example() {
 
     let level = rt_hw_interrupt_disable();
     rt_thread_startup(thread_1);
-    rt_thread_startup(thread_2);
+    rt_thread_startup(thread_2.clone());
+    rt_thread_sleep(thread_2.clone(), 10000);
     rt_thread_startup(thread_3);
     rt_hw_interrupt_enable(level);
 

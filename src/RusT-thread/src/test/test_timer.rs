@@ -58,18 +58,24 @@ pub fn run_all_timer_tests() {
 
 pub fn simple_timer_test() {
     let timer_callback = move || {
-        hprintln!("simple_timer_test");
+        hprintln!("timer_test");
         hprintln!("rt_tick_get: {}", rt_tick_get());
     };
 
     let timer = Arc::new(Mutex::new(RtTimer::new(
         "simple_timer_test", // name
         0, // obj_type (example value)
-        0x2, // flag (assuming 0x2 is periodic)
+        0x0, // flag (assuming 0x2 is periodic)
         Some(Box::new(timer_callback)), // timeout_func
         1000, // init_tick (initial delay in ticks)
         1000, // timeout_tick (period for periodic timers)
     )));
+    
+    // 打印定时器内容
+    {
+        let timer_ref = timer.lock();
+        hprintln!("timer: {}", *timer_ref);
+    }
 
     rt_timer_start(timer.clone());
 }

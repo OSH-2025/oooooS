@@ -14,6 +14,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use spin::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
+use core::fmt::{self, Display};
 
 //由于rust中可以使用高级容器：动态数组，所以不需要使用链表（跳表）算法来加速
 //定时器的查找，而可以使用二分查找，所以我们决定把定时器存放在动态数组中
@@ -33,12 +34,25 @@ const RT_TIMER_FLAG_PERIODIC: u8 = 0x2;
 /// });
 /// rt_timer_start(timer.clone());
 /// ```
+/// 
+
 pub struct RtTimer {
     pub parent: RtObject,
-    pub timeout_callback: Option<Box<dyn FnMut() + Send + Sync + 'static>>,
+    pub timeout_callback: Option<Callable>,
     pub init_tick: u32,
     pub timeout_tick: u32,
 }
+
+impl Display for RtTimer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 使用core::str::from_utf8来处理字节数组
+        let name_str = core::str::from_utf8(&self.parent.name)
+            .unwrap_or("invalid_utf8")
+            .trim_matches('\0'); // 移除null字符
+        write!(f, "RtTimer {{ name: {:?}, init_tick: {}, timeout_tick: {} }}", name_str, self.init_tick, self.timeout_tick)
+    }
+}
+
 
 impl RtTimer {
     /// 创建一个新的 RtTimer 实例
@@ -53,7 +67,7 @@ impl RtTimer {
         name: &str,
         obj_type: u8,
         flag: u8,
-        timeout_func: Option<Box<dyn FnMut() + Send + Sync + 'static>>,
+        timeout_func: Option<Callable>,
         init_tick: u32,
         timeout_tick: u32,
     ) -> Self {
@@ -94,6 +108,7 @@ impl Drop for RtTimer {
 
 /// 定时器句柄类型
 pub type TimerHandle = Arc<Mutex<RtTimer>>;
+pub type Callable = Box<dyn FnMut() + Send + Sync + 'static>;
 
 /// 单线程环境下的全局定时器数组，只能通过本文件的接口操作
 static mut TIMERS: Option<Mutex<Vec<TimerHandle>>> = Some(Mutex::new(Vec::new()));
@@ -219,44 +234,26 @@ pub fn rt_timer_check() {
     unsafe {
         if let Some(ref timers_mutex) = TIMERS {
             let mut timers = timers_mutex.lock();
-            // Find the position of the first timer that has not yet expired
-            // Adjusting binary_search logic for wrapping arithmetic and comparing with current_tick
-            let pos = timers.binary_search_by(|timer_handle| {
+            
+            // 找到第一个未过期的定时器位置
+            let mut expired_count = 0;
+            for timer_handle in timers.iter() {
                 let t = timer_handle.lock();
-                // This comparison needs careful consideration for wrapping u32 arithmetic.
-                // A simple subtraction comparison works if the difference doesn't wrap more than u32::MAX/2.
-                // A more robust check for timer expiration with wrapping ticks:
-                // A timer t expires if current_tick is "after" t.timeout_tick in a wrapping sense.
-                // This is true if current_tick >= t.timeout_tick (non-wrapping case)
-                // OR if current_tick < t.timeout_tick AND the difference is large (indicating wrap-around)
-                // A common pattern is checking `current_tick.wrapping_sub(t.timeout_tick) < WRAP_THRESHOLD`.
-                // For a simple check, let's assume a wrap-around hasn't happened within a timer's life + max init_tick.
-                // Or, more safely, check if the difference `current_tick - t.timeout_tick` is positive,
-                // which handles wrapping correctly if interpreted as signed, but u32 is unsigned.
-                // A safer comparison for expiration: `current_tick.wrapping_sub(t.timeout_tick) < u32::MAX / 2` implies current_tick is ahead.
-                // If `current_tick.wrapping_sub(t.timeout_tick)` is small and positive, it expired.
-                // If it's large and positive, timeout_tick is in the future (wrapped around).
-                // If it's negative (effectively large positive for u32), timeout_tick is in the future.
-
-                // Let's use a robust comparison for expiration in wrapping arithmetic:
-                // `a` is "after" `b` if `a - b` (wrapping) is small positive.
-                // `a` is "before" `b` if `a - b` (wrapping) is large positive.
-                // So, timer expires if `current_tick` is "after" `t.timeout_tick`.
-                // This is equivalent to checking if `current_tick.wrapping_sub(t.timeout_tick)`
-                // interpreted as a signed integer is positive or zero.
-
                 let diff = current_tick.wrapping_sub(t.timeout_tick);
-
-                // If diff interpreted as signed is >= 0, current_tick is at or after timeout_tick (it expired or is now expiring)
+                
+                // 如果diff >= 0，说明定时器已过期
                 if (diff as i32) >= 0 {
-                    core::cmp::Ordering::Greater // This timer has timed out or is due now
+                    expired_count += 1;
                 } else {
-                    core::cmp::Ordering::Less // This timer is still in the future
+                    // 找到第一个未过期的定时器，停止搜索
+                    break;
                 }
-            }).unwrap_or_else(|e| e);
-
-            // Drain all timers from the beginning up to the first non-expired timer's position
-            expired_timers = timers.drain(0..pos).collect();
+            }
+            
+            // 只移除已过期的定时器
+            if expired_count > 0 {
+                expired_timers = timers.drain(0..expired_count).collect();
+            }
         }
     }
     rt_hw_interrupt_enable(level);
