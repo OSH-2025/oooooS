@@ -49,21 +49,11 @@ impl Scheduler {
 }
 
 fn switch_to_thread(thread: Arc<RtThread>) {
-    // let stack_pointer = thread.inner.exclusive_access().stack_pointer;
-    // hprintln!("switch_to_thread: {:x}", &stack_pointer);
-    // rt_hw_context_switch_to(&raw const stack_pointer as *mut u32);
     let stack_pointer = thread.inner.field_mut_ptr(|thread| &mut thread.stack_pointer);
     rt_hw_context_switch_to(stack_pointer);
 }
 
 fn switch_to_thread_from_to(from_thread: Arc<RtThread>, to_thread: Arc<RtThread>) {
-
-    // 实现有误：应该传入线程的栈指针的原始地址，而不要经过RTIntrFreeCell的引用转换
-    // let from_stack_pointer = from_thread.inner.exclusive_access().stack_pointer;
-    // let to_stack_pointer = to_thread.inner.exclusive_access().stack_pointer;
-    // // hprintln!("switch: from: {:x}, to: {:x}", &from_stack_pointer, &to_stack_pointer);
-    // rt_hw_context_switch(&from_stack_pointer as *const usize as *mut u32, &to_stack_pointer as *const usize as *mut u32);
-
     let from_stack_pointer = from_thread.inner.field_mut_ptr(|thread| &mut thread.stack_pointer);
     let to_stack_pointer = to_thread.inner.field_mut_ptr(|thread| &mut thread.stack_pointer);
     rt_hw_context_switch(from_stack_pointer, to_stack_pointer);
@@ -74,8 +64,7 @@ struct ThreadSwitchContext {
     from_thread: Option<Arc<RtThread>>,
     to_thread: Arc<RtThread>,
     /// 是否需要将原线程重新插入就绪队列：true表示需要，false表示不需要
-    /// true：yield后，需要将原线程重新插入就绪队列
-    /// false：Suspend后，不需要将原线程重新插入就绪队列 (resume后，会自动插入)
+    /// true：当原线程状态为运行或让出时，需要将原线程重新插入就绪队列
     need_insert_from_thread: bool,
 }
 
@@ -98,11 +87,9 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
         let current_priority = current_thread.inner.exclusive_access().current_priority;
         // 当前线程优先级小于新线程优先级
         if current_priority < priority {
-            // hprintln!("current_priority: {:?} < priority: {:?}", current_priority, priority);
             // 当前线程优先级更高，继续运行当前线程
             to_thread = current_thread.clone();
         } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
-            // hprintln!("current_priority: {:?} == priority: {:?} and !has_yield", current_priority, priority);
             // 优先级相同且未让出CPU，继续运行当前线程
             to_thread = current_thread.clone();
         } 
@@ -110,8 +97,8 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
         // 清除让出标志
         current_thread.inner.exclusive_access().stat.clear_yield();
 
-        // 如果当前线程状态为运行或让出，则需要将原线程重新插入就绪队列
-        if current_stat == ThreadState::Running || current_stat.has_yield() {
+        // 如果当前线程状态为运行，则需要将原线程重新插入就绪队列
+        if current_stat.get_stat() == (ThreadState::Running as u8){
             need_insert_from_thread = true;
         } else {// 被挂起
             need_insert_from_thread = false;

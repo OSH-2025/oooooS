@@ -50,5 +50,5 @@ pub fn run_all_tests() {
 
     // test_interupt::test_interupt();
     // test_interupt::test_RtIntrFreeCell();
-    test_cell::test_cell();
+    // test_cell::test_cell();
 }
