@@ -120,13 +120,13 @@ pub fn rt_hw_context_switch_to(to_sp: *mut u32) {
 #[cortex_m_rt::exception]
 unsafe fn PendSV()  {
     // 保存编译器(?)的帧指针
-    let saved_r7: u32;
-    unsafe {
-        asm!(
-            "mov {0}, r7",
-            out(reg) saved_r7,
-        );
-    }
+    // let saved_r7: u32;
+    // unsafe {
+    //     asm!(
+    //         "mov {0}, r7",
+    //         out(reg) saved_r7,
+    //     );
+    // }
 
     unsafe {
         asm!(
@@ -147,7 +147,6 @@ unsafe fn PendSV()  {
             "ldr r0, =SWITCH_FROM_THREAD",
             "ldr r1, [r0]",    
             "cbz r1, 1f",         // 如果为0，跳到恢复目标线程
-            "ldr r1, [r1]",
 
             // 保存当前线程上下文
             "mrs r1, psp",        // 获取PSP
@@ -230,11 +229,11 @@ unsafe fn PendSV()  {
             "msr PRIMASK, r2",    // 恢复中断状态
         );
 
-        asm!(
-            // 恢复编译器的帧指针
-            "mov r7, {0}",
-            in(reg) saved_r7,
-        );
+        // asm!(
+        //     // 恢复编译器的帧指针
+        //     "mov r7, {0}",
+        //     in(reg) saved_r7,
+        // );
 
         asm!(
             "bx lr",

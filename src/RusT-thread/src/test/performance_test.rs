@@ -130,14 +130,12 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
     
     while *TEST_RUNNING.exclusive_access() {
         let event_opt = {
-            let level = rt_hw_interrupt_disable();
             let mut queue = EVENT_QUEUE.exclusive_access();
             
             // 查找优先级 7-10 的事件
             let pos = queue.iter().position(|e| e.priority >= 7);
             let event = pos.map(|i| queue.remove(i));
             
-            rt_hw_interrupt_enable(level);
             event
         };
         
@@ -159,11 +157,12 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
             rt_hw_interrupt_enable(level);
         } else {
             // 没有高优先级事件，短暂休眠
-            rt_thread_sleep(rt_thread_self().unwrap(), 5);
+            // rt_thread_sleep(rt_thread_self().unwrap(), 5);
         }
     }
     
     hprintln!("高优先级处理器停止");
+    rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 事件处理线程入口函数 (中优先级)
@@ -204,6 +203,7 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
     }
     
     hprintln!("中优先级处理器停止");
+    rt_thread_delete(rt_thread_self().unwrap());
     
 }
 
@@ -213,14 +213,12 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
     
     while *TEST_RUNNING.exclusive_access() {
         let event_opt = {
-            let level = rt_hw_interrupt_disable();
             let mut queue = EVENT_QUEUE.exclusive_access();
             
             // 查找优先级 1-3 的事件
             let pos = queue.iter().position(|e| e.priority >= 1 && e.priority <= 3);
             let event = pos.map(|i| queue.remove(i));
             
-            rt_hw_interrupt_enable(level);
             event
         };
         
@@ -242,24 +240,25 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
             rt_hw_interrupt_enable(level);
         } else {
             // 没有低优先级事件，短暂休眠
-            rt_thread_sleep(rt_thread_self().unwrap(), 15);
+            // rt_thread_sleep(rt_thread_self().unwrap(), 15);
         }
     }
     
     hprintln!("低优先级处理器停止");
+    rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 结果分析线程入口函数
 pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     hprintln!("结果分析器启动");
     
-    // 等待测试完成
-    while *TEST_RUNNING.exclusive_access() {
-        rt_thread_sleep(rt_thread_self().unwrap(), 100);
-    }
+    // // 等待测试完成
+    // while *TEST_RUNNING.exclusive_access() {
+    //     rt_thread_sleep(rt_thread_self().unwrap(), 100);
+    // }
     
-    // 再等待一段时间，确保所有事件都被处理完成
-    rt_thread_sleep(rt_thread_self().unwrap(), 200);
+    // // 再等待一段时间，确保所有事件都被处理完成
+    // rt_thread_sleep(rt_thread_self().unwrap(), 200);
     
     // 分析结果
     let events = COMPLETED_EVENTS.exclusive_access();
@@ -348,7 +347,7 @@ pub fn run_performance_test() {
         "event_gen", 
         event_generator_entry as usize, 
         2*1024, 
-        15, 
+        10, 
         10
     );
     
@@ -391,11 +390,10 @@ pub fn run_performance_test() {
     // 启动所有线程
     let level = rt_hw_interrupt_disable();
     rt_thread_startup(generator);
-    // rt_thread_startup(high_processor);
+    rt_thread_startup(high_processor);
     rt_thread_startup(medium_processor);
-    hprintln!("OK");
-    // rt_thread_startup(low_processor);
-    // rt_thread_startup(analyzer);
+    rt_thread_startup(low_processor);
+    rt_thread_startup(analyzer);
     rt_hw_interrupt_enable(level);
     
     hprintln!("性能测试线程已启动");
