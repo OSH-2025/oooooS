@@ -24,6 +24,15 @@ const RT_TIMER_FLAG_PERIODIC: u8 = 0x2;
 
 /// 定时器结构体
 /// 注意回调函数应是一个函数或闭包，且其类型满足FnMut() + Send + Sync + 'static
+/// 
+/// 使用示例：
+/// ```
+/// let timer = Arc::new(Mutex::new(RtTimer::new("timer", 0, 0, None, 0, 0))); // 创建一个定时器
+/// timer.set_timeout_callback(|| {
+///     hprintln!("timer timeout");
+/// });
+/// rt_timer_start(timer.clone());
+/// ```
 pub struct RtTimer {
     pub parent: RtObject,
     pub timeout_callback: Option<Box<dyn FnMut() + Send + Sync + 'static>>,
@@ -34,6 +43,12 @@ pub struct RtTimer {
 impl RtTimer {
     /// 创建一个新的 RtTimer 实例
     /// 回调函数通过闭包捕获其环境来访问所需数据，无需额外的 user_data 指针
+    /// * `name` 定时器名称
+    /// * `obj_type` 定时器对象类型
+    /// * `flag` 定时器标志：0：单次定时器，2：周期定时器
+    /// * `timeout_func` 定时器回调函数
+    /// * `init_tick` 定时器初始超时时间
+    /// * `timeout_tick` 定时器超时时间
     pub fn new(
         name: &str,
         obj_type: u8,
@@ -96,20 +111,20 @@ pub fn rt_timer_start(timer: TimerHandle) {
     let level = rt_hw_interrupt_disable();
     unsafe {
         if let Some(ref timers_mutex) = TIMERS {
-            let mut timers = timers_mutex.lock();
-            let mut timer_locked = timer.lock();
-            timer_locked.parent.flag |= RT_TIMER_FLAG_ACTIVATED;
-            timer_locked.timeout_tick = timer_locked.init_tick.wrapping_add(rt_tick_get());
-            let timeout_tick = timer_locked.timeout_tick;
-            drop(timer_locked); // Drop lock before binary_search_by
+            let mut timers = timers_mutex.lock();// 获取定时器数组锁
+            let mut timer_locked = timer.lock();// 获取定时器锁
+            timer_locked.parent.flag |= RT_TIMER_FLAG_ACTIVATED;// 设置定时器激活状态
+            timer_locked.timeout_tick = timer_locked.init_tick.wrapping_add(rt_tick_get());// 设置定时器超时时间
+            let timeout_tick = timer_locked.timeout_tick;// 获取定时器超时时间
+            drop(timer_locked); // 释放定时器锁
 
-            // Use timer_locked.timeout_tick within the closure for comparison
+            // 使用定时器超时时间进行二分查找
             let pos = timers.binary_search_by(|probe| {
                  let probe_locked = probe.lock();
                  probe_locked.timeout_tick.cmp(&timeout_tick)
             })
                 .unwrap_or_else(|e| e);
-            timers.insert(pos, timer);
+            timers.insert(pos, timer);// 将定时器插入到timers数组中
         }
     }
     rt_hw_interrupt_enable(level);
@@ -132,6 +147,12 @@ pub fn rt_timer_stop(timer: &TimerHandle) {
 
 /// 定义定时器控制命令的枚举
 /// 这种方式比使用原始指针更类型安全和符合 Rust 习惯
+/// 使用示例：
+/// ```
+/// let timer = Arc::new(Mutex::new(RtTimer::new("timer", 0, 0, None, 0, 0)));
+/// let mut time = 0;
+/// rt_timer_control(&timer, TimerControlCmd::GetTime(&mut time));
+/// ```
 pub enum TimerControlCmd<'a> {
     /// 获取初始超时时间（tick 值），结果存入 `&mut u32`
     GetTime(&'a mut u32),

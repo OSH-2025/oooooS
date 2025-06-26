@@ -8,6 +8,7 @@ use lazy_static::lazy_static;
 extern crate alloc;
 use alloc::vec::Vec;
 use spin::Mutex;
+use alloc::boxed::Box;
 
 use crate::rtthread_rt::rtdef::*;
 use crate::rtthread_rt::thread::*;
@@ -145,6 +146,9 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     // hprintln!("stack_pointer in rt_thread_create: {:x}", stack_pointer.clone());
     let name_bytes = name.as_bytes();
     let len = name_bytes.len().min(RT_NAME_MAX);
+    let timer_callback = move || {
+        hprintln!("timer_callback");
+    };
     let timer = Arc::new(Mutex::new(timer::RtTimer::new(name,0,0,None,0,0)));
     // hprintln!("timer in rt_thread_create");
     let inner =unsafe {
@@ -204,6 +208,7 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
     let level = rt_hw_interrupt_disable();
 
     thread.inner.exclusive_access().stat = ThreadState::Close; 
+    rt_schedule();
 
     rt_hw_interrupt_enable(level);
     RT_EOK
@@ -234,6 +239,7 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
 /// @return RT_EOK: 挂起成功
 ///         RT_ERROR: 挂起失败
 pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
+    hprintln!("rt_thread_suspend: {:?}", thread);
     let stat = thread.inner.exclusive_access().stat.get_stat();
     if (stat != (ThreadState::Ready as u8)) && (stat != (ThreadState::Running as u8)) {
         return RT_ERROR;
@@ -242,53 +248,74 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     let level = rt_hw_interrupt_disable();
     
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
+    // 如果线程在就绪队列中，则将其从就绪队列中移除
     remove_thread(thread.clone());
-
-
-    timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
+    // 调用调度器让出CPU
+    rt_schedule();
 
     rt_hw_interrupt_enable(level);
     RT_EOK
 }
 
 /// 使线程进入睡眠状态
-/// 
-/// @param thread 线程对象
-/// @param tick 睡眠时间
+/// 让权给其他线程
+/// * `thread` 线程对象
+/// * `tick` 睡眠时间
 /// @return RT_EOK: 睡眠成功
 ///         RT_ERROR: 睡眠失败
 pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
-    if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Ready as u8) {
+    // 检查线程状态：允许Ready和Running状态的线程睡眠
+    let stat = thread.inner.exclusive_access().stat.get_stat();
+    if (stat != (ThreadState::Ready as u8)) && (stat != (ThreadState::Running as u8)) {
         return RT_ERROR;
     }
 
     let level = rt_hw_interrupt_disable();
+    // 设置错误状态为超时，表示线程正在等待
+    thread.inner.exclusive_access().error = RT_ETIMEOUT;
 
-    thread.inner.exclusive_access().error = RT_EOK;
-
+    // 挂起线程
     rt_thread_suspend(thread.clone());
 
-    // todo 这里极可能有问题
-    let timer_control_cmd = timer::TimerControlCmd::SetTime(tick as u32);
-    timer::rt_timer_control(&thread.inner.exclusive_access().timer, timer_control_cmd);
-    
-    timer::rt_timer_start(thread.inner.exclusive_access().timer.clone());
+    // 创建睡眠定时器回调
+    let thread_clone = thread.clone();
+    let timer_callback = move || {
+        hprintln!("timer_callback: resume thread");
+        // 在定时器回调中恢复线程
+        rt_thread_resume(thread_clone.clone());
+    };
 
+    // 创建单次定时器（不是周期定时器）
+    let timer = Arc::new(Mutex::new(RtTimer::new(
+        "rt_thread_sleep",
+        0,
+        0x0,  // 单次定时器，不是周期定时器
+        Some(Box::new(timer_callback)),
+        tick as u32,
+        tick as u32,
+    )));
+    
+    // 启动定时器
+    timer::rt_timer_start(timer.clone());
+    
+    // 将定时器句柄保存到线程中，以便需要时可以停止
+    // 注意：这里需要修改线程结构体以支持睡眠定时器
+    thread.inner.exclusive_access().timer = timer;
+
+    // 调用调度器让出CPU
     rt_schedule();
 
-    if thread.inner.exclusive_access().error == RT_ETIMEOUT {
-        thread.inner.exclusive_access().error = RT_EOK;
-    }
-
+    // 恢复中断
     rt_hw_interrupt_enable(level);
+    
     RT_EOK
 }
 
 
 /// 控制线程
-/// @param thread 线程对象
-/// @param cmd 控制命令
-/// @param arg 控制参数
+/// * `thread` 线程对象
+/// * `cmd` 控制命令
+/// * `arg` 控制参数
 /// @return RT_EOK: 控制成功
 ///         RT_ERROR: 控制失败
 pub fn rt_thread_control(thread: Arc<RtThread>, cmd: u8, arg: u8) -> RtErrT {
