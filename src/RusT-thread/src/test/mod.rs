@@ -15,14 +15,17 @@ pub mod test_scheduler;
 pub mod test_interupt;
 pub mod example;
 pub mod test_cell;
+pub mod performance_test;
+
+
+#[cfg(feature = "test_timer")]
+pub mod test_timer;
+#[cfg(feature = "test_small_mem")]
+pub mod test_small_mem;
+#[cfg(feature = "test_allocator_compare")]
+pub mod test_allocator_compare;
+
 pub mod test_all;
-
-
-
-// pub mod test_timer;
-
-// pub mod test_small_mem;
-
 
 
 

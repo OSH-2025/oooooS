@@ -135,8 +135,6 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
         need_insert_from_thread,
     } = context;
 
-    
-
     if need_insert_from_thread {
         if let Some(from) = &from_thread {
             from.inner.exclusive_access().stat = ThreadState::Ready;
@@ -160,7 +158,7 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
 
 pub fn rt_schedule() {
     // hprintln!("schedule");
-    // hprintln!("current_thread: {:?}", get_current_thread());
+    hprintln!("current_thread: {:?}", get_current_thread());
     // 关中断
     let level = rt_hw_interrupt_disable();
 
