@@ -73,49 +73,48 @@ fn switch_to_thread_from_to(from_thread: Arc<RtThread>, to_thread: Arc<RtThread>
 struct ThreadSwitchContext {
     from_thread: Option<Arc<RtThread>>,
     to_thread: Arc<RtThread>,
+    /// 是否需要将原线程重新插入就绪队列：true表示需要，false表示不需要
+    /// true：yield后，需要将原线程重新插入就绪队列
+    /// false：Suspend后，不需要将原线程重新插入就绪队列 (resume后，会自动插入)
     need_insert_from_thread: bool,
 }
 
 fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     // hprintln!("prepare_thread_switch");
     let mut scheduler = RT_SCHEDULER.exclusive_access();
-    // hprintln!("get scheduler");
     // 获取最高优先级
     let priority = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
-    // hprintln!("get highest priority");
     // 获取最高优先级的线程
     let mut to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority)?;
-    // hprintln!("get to_thread");
 
-    // 是否需要将原线程重新插入就绪队列
+    // 是否需要将原线程重新插入就绪队列：true表示需要，false表示不需要
     let mut need_insert_from_thread = true;
-    // hprintln!("get need_insert_from_thread");
+
     // 检查当前线程状态
     if let Some(current_thread) = &scheduler.current_thread {
         let current_stat = current_thread.inner.exclusive_access().stat;
-        // hprintln!("get current_stat");
-        // 当前线程状态为运行
+        
+        // 获取当前线程优先级
+        let current_priority = current_thread.inner.exclusive_access().current_priority;
+        // 当前线程优先级小于新线程优先级
+        if current_priority < priority {
+            // hprintln!("current_priority: {:?} < priority: {:?}", current_priority, priority);
+            // 当前线程优先级更高，继续运行当前线程
+            to_thread = current_thread.clone();
+        } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
+            // hprintln!("current_priority: {:?} == priority: {:?} and !has_yield", current_priority, priority);
+            // 优先级相同且未让出CPU，继续运行当前线程
+            to_thread = current_thread.clone();
+        } 
+
+        // 清除让出标志
+        current_thread.inner.exclusive_access().stat.clear_yield();
+
+        // 如果当前线程状态为运行或让出，则需要将原线程重新插入就绪队列
         if current_stat == ThreadState::Running || current_stat.has_yield() {
-            // 获取当前线程优先级
-            let current_priority = current_thread.inner.exclusive_access().current_priority;
-            // 当前线程优先级小于新线程优先级
-            if current_priority < priority {
-                // hprintln!("current_priority: {:?} < priority: {:?}", current_priority, priority);
-                // 当前线程优先级更高，继续运行当前线程
-                need_insert_from_thread = true;
-                to_thread = current_thread.clone();
-            } else if current_priority == priority && !current_thread.inner.exclusive_access().stat.has_yield() {
-                // hprintln!("current_priority: {:?} == priority: {:?} and !has_yield", current_priority, priority);
-                // 优先级相同且未让出CPU，继续运行当前线程
-                need_insert_from_thread = true;
-                to_thread = current_thread.clone();
-            } else {
-                // hprintln!("current_priority: {:?} >= priority: {:?} and has_yield", current_priority, priority);
-                // 需要切换到新线程
-                need_insert_from_thread = true;
-            }
-            // 清除让出标志
-            current_thread.inner.exclusive_access().stat.clear_yield();
+            need_insert_from_thread = true;
+        } else {// 被挂起
+            need_insert_from_thread = false;
         }
     }
     else {
@@ -149,21 +148,17 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
         need_insert_from_thread,
     } = context;
 
-    if from_thread.is_some() {
-        // hprintln!("execute_thread_switch: from_thread: {:?} to_thread: {:?}", from_thread.clone(), to_thread.clone());
-    }
+    
 
     if need_insert_from_thread {
         if let Some(from) = &from_thread {
-            // hprintln!("execute_thread_switch: from_thread: {:?} will be inserted to priority: {:?}", from.clone(), from.inner.exclusive_access().current_priority);
+            from.inner.exclusive_access().stat = ThreadState::Ready;
             // 将原线程重新插入就绪队列
             let priority = from.inner.exclusive_access().current_priority;
             RT_THREAD_PRIORITY_TABLE.exclusive_access().push_back_to_priority(priority, from.clone());
         }
     }
-    else {
-        // hprintln!("Warning: from_thread: {:?} will not be inserted to priority", from_thread.clone());
-    }
+    
 
     // 设置新线程状态为运行
     to_thread.inner.exclusive_access().stat = ThreadState::Running;

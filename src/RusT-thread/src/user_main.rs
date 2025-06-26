@@ -15,7 +15,7 @@ use cortex_m::asm;
 // 用户主线程入口
 pub extern "C" fn main_entry(arg: usize) -> () {
     hprintln!("main_entry...");
-    // example::run_example();
+    example::run_example();
     // 用户主线程入口
     loop{
         asm::nop;

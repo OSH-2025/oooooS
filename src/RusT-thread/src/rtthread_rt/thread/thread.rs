@@ -218,28 +218,18 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Init as u8) {
         return RT_ERROR;
     }
-    // hprintln!("rt_thread_startup 1...");
-    let level = rt_hw_interrupt_disable();
-    // hprintln!("rt_thread_startup 2...");
-    thread.inner.exclusive_access().stat = ThreadState::Suspend;
-    // hprintln!("rt_thread_startup 3...");
-    rt_thread_resume(thread.clone()); 
-    // hprintln!("rt_thread_startup 4...");
-    /*
-    if rt_thread_self() != RT_NULL {
-        schedule::Scheduler::schedule(); 
-    }
-    */
 
-    // rt_schedule();
-    // hprintln!("rt_thread_startup 5...");
+    let level = rt_hw_interrupt_disable();
+    thread.inner.exclusive_access().stat = ThreadState::Suspend;
+    rt_thread_resume(thread.clone()); 
     rt_hw_interrupt_enable(level);
-    // hprintln!("rt_thread_startup 6...");
     rt_schedule();
     RT_EOK
 }
 
 /// 线程挂起
+/// 将线程从就绪或运行状态挂起，并将其从就绪队列中移除
+/// 调度器检测当前状态为挂起时，不会将其插入到就绪队列中
 /// @param thread 线程对象
 /// @return RT_EOK: 挂起成功
 ///         RT_ERROR: 挂起失败
@@ -250,9 +240,11 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     }
 
     let level = rt_hw_interrupt_disable();
-    remove_thread(thread.clone());
-    thread.inner.exclusive_access().stat = ThreadState::Suspend;
     
+    thread.inner.exclusive_access().stat = ThreadState::Suspend;
+    remove_thread(thread.clone());
+
+
     timer::rt_timer_stop(&thread.inner.exclusive_access().timer);
 
     rt_hw_interrupt_enable(level);
@@ -260,6 +252,7 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
 }
 
 /// 使线程进入睡眠状态
+/// 
 /// @param thread 线程对象
 /// @param tick 睡眠时间
 /// @return RT_EOK: 睡眠成功
@@ -348,31 +341,28 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Suspend as u8) {
         return RT_ERROR;
     }
-    // hprintln!("rt_thread_resume 1...");
-    let level = rt_hw_interrupt_disable();
-    
-    // todo RT_THREAD_LIST.remove(thread.clone());未实现，可能不需要实现
 
+    let level = rt_hw_interrupt_disable();
+
+    thread.inner.exclusive_access().stat = ThreadState::Ready;
     thread_priority_table::insert_thread(thread.clone());
-    // hprintln!("rt_thread_resume 2...");
     rt_hw_interrupt_enable(level);
-    // hprintln!("rt_thread_resume 3...");
     RT_EOK
 }
 
+/// 线程让出CPU
+/// 给正在运行的线程打上让出标志，并调用调度器进行线程切换
+/// @return RT_EOK: 让出成功
+///         RT_ERROR: 让出失败
 pub fn rt_thread_yield() -> RtErrT {
     let level = rt_hw_interrupt_disable();
-    // hprintln!("rt_thread_yield 1...");
+
     if let Some(current_thread) = scheduler::get_current_thread() {
-        // hprintln!("rt_thread_yield 2...");
         let mut inner = current_thread.inner.exclusive_access();
         inner.remaining_tick = inner.init_tick;
-        // hprintln!("rt_thread_yield 3...");
         inner.stat.set_yield();
-        // hprintln!("rt_thread_yield: {:?}", current_thread.clone());
     }
     rt_hw_interrupt_enable(level);
-    // hprintln!("rt_thread_yield 4...");
     scheduler::rt_schedule();
     RT_EOK
 }
