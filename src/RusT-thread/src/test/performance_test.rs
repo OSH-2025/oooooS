@@ -172,14 +172,11 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
     
     while *TEST_RUNNING.exclusive_access() {
         let event_opt = {
-            let level = rt_hw_interrupt_disable();
             let mut queue = EVENT_QUEUE.exclusive_access();
-            
             // 查找优先级 4-6 的事件
             let pos = queue.iter().position(|e| e.priority >= 4 && e.priority <= 6);
             let event = pos.map(|i| queue.remove(i));
-            
-            rt_hw_interrupt_enable(level);
+
             event
         };
 

@@ -41,9 +41,9 @@ pub fn rt_tick_increase() {
 
     if let Some(thread) = rt_thread_self() {
         thread.inner.exclusive_access().remaining_tick -= 1;
-        
+        // hprintln!("thread {:?}: remaining_tick: {}", thread.clone(), thread.inner.exclusive_access().remaining_tick);
         if thread.inner.exclusive_access().remaining_tick == 0 {
-            hprintln!("rt_tick_increase: yield");
+            // hprintln!("rt_tick_increase: yield");
             // hprintln!("thread: {:?}", thread.clone());
             rt_thread_yield();
         }
