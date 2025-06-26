@@ -76,23 +76,26 @@ impl Event {
     }
 }
 
-// 全局事件队列
+// 全局事件队列和计数器
 lazy_static! {
     static ref EVENT_QUEUE: RTIntrFreeCell<Vec<Event>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
     static ref COMPLETED_EVENTS: RTIntrFreeCell<Vec<Event>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
     static ref EVENT_COUNTER: AtomicU32 = AtomicU32::new(0);
+    static ref COMPLETED_COUNTER: AtomicU32 = AtomicU32::new(0);
     static ref TEST_RUNNING: RTIntrFreeCell<bool> = unsafe { RTIntrFreeCell::new(true) };
 }
+
+// 目标生成事件数
+const TARGET_EVENT_COUNT: u32 = 100;
 
 /// 事件生成线程入口函数
 pub extern "C" fn event_generator_entry(arg: usize) -> () {
     let mut rng = RandomGenerator::new(rt_tick_get() as u32);
-    let event_probability = 10; // 10% 概率生成事件
-    let mut tick_count = 0;
+    let event_probability = 10; // 20% 概率生成事件
     
-    hprintln!("事件生成器启动");
+    hprintln!("事件生成器启动，目标生成 {} 个事件", TARGET_EVENT_COUNT);
     
-    while *TEST_RUNNING.exclusive_access() {
+    while EVENT_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
         if rng.generate_event(event_probability) {
             // 生成一个新事件
             let event_id = EVENT_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -108,27 +111,17 @@ pub extern "C" fn event_generator_entry(arg: usize) -> () {
             EVENT_QUEUE.exclusive_access().push(event);
             rt_hw_interrupt_enable(level);
         }
-        
-        // 每10个tick检查一次
-        // rt_thread_sleep(rt_thread_self().unwrap(), 10);
-        tick_count += 1;
-        
-        // 测试运行1000个tick后结束
-        if tick_count >= 1000 {
-            *TEST_RUNNING.exclusive_access() = false;
-        }
     }
     
-    hprintln!("事件生成器停止");
+    hprintln!("事件生成器停止，已生成 {} 个事件", EVENT_COUNTER.load(Ordering::SeqCst));
     rt_thread_delete(rt_thread_self().unwrap());
-    
 }
 
 /// 事件处理线程入口函数 (高优先级)
 pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
     hprintln!("高优先级处理器启动");
     
-    while *TEST_RUNNING.exclusive_access() {
+    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
         let event_opt = {
             let mut queue = EVENT_QUEUE.exclusive_access();
             
@@ -146,18 +139,17 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
             
             // 模拟处理时间 (优先级越高处理越快)
             let processing_time = 20 - event.priority as usize;
-            rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
+            // rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
             
             // 记录完成时间
             event.completion_tick = rt_tick_get();
             
-            // 添加到已完成事件列表
+            // 添加到已完成事件列表并增加计数器
             let level = rt_hw_interrupt_disable();
             COMPLETED_EVENTS.exclusive_access().push(event);
             rt_hw_interrupt_enable(level);
-        } else {
-            // 没有高优先级事件，短暂休眠
-            // rt_thread_sleep(rt_thread_self().unwrap(), 5);
+            
+            COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
     }
     
@@ -169,7 +161,7 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
 pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
     hprintln!("中优先级处理器启动");
     
-    while *TEST_RUNNING.exclusive_access() {
+    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
         let event_opt = {
             let mut queue = EVENT_QUEUE.exclusive_access();
             // 查找优先级 4-6 的事件
@@ -186,32 +178,29 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
             
             // 模拟处理时间 (优先级越高处理越快)
             let processing_time = 30 - event.priority as usize * 2;
-            rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
+            // rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
             
             // 记录完成时间
             event.completion_tick = rt_tick_get();
             
-            // 添加到已完成事件列表
+            // 添加到已完成事件列表并增加计数器
             let level = rt_hw_interrupt_disable();
             COMPLETED_EVENTS.exclusive_access().push(event);
             rt_hw_interrupt_enable(level);
-        } else {
-            // 没有中优先级事件，短暂休眠
-            // hprintln!("没有中优先级事件");
-            // rt_thread_sleep(rt_thread_self().unwrap(), 10);
+            
+            COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
     }
     
     hprintln!("中优先级处理器停止");
     rt_thread_delete(rt_thread_self().unwrap());
-    
 }
 
 /// 事件处理线程入口函数 (低优先级)
 pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
     hprintln!("低优先级处理器启动");
     
-    while *TEST_RUNNING.exclusive_access() {
+    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
         let event_opt = {
             let mut queue = EVENT_QUEUE.exclusive_access();
             
@@ -229,18 +218,17 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
             
             // 模拟处理时间 (优先级越高处理越快)
             let processing_time = 50 - event.priority as usize * 5;
-            rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
+            // rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
             
             // 记录完成时间
             event.completion_tick = rt_tick_get();
             
-            // 添加到已完成事件列表
+            // 添加到已完成事件列表并增加计数器
             let level = rt_hw_interrupt_disable();
             COMPLETED_EVENTS.exclusive_access().push(event);
             rt_hw_interrupt_enable(level);
-        } else {
-            // 没有低优先级事件，短暂休眠
-            // rt_thread_sleep(rt_thread_self().unwrap(), 15);
+            
+            COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
     }
     
@@ -252,12 +240,12 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
 pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     hprintln!("结果分析器启动");
     
-    // // 等待测试完成
-    // while *TEST_RUNNING.exclusive_access() {
-    //     rt_thread_sleep(rt_thread_self().unwrap(), 100);
-    // }
+    // 等待所有事件处理完成
+    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
+        // rt_thread_sleep(rt_thread_self().unwrap(), 100);
+    }
     
-    // // 再等待一段时间，确保所有事件都被处理完成
+    // 再等待一段时间，确保所有处理线程都已退出
     // rt_thread_sleep(rt_thread_self().unwrap(), 200);
     
     // 分析结果
@@ -330,6 +318,7 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     }
     
     hprintln!("结果分析器停止");
+    hprintln!("性能测试完成");
 }
 
 /// 运行性能测试
@@ -338,6 +327,7 @@ pub fn run_performance_test() {
     
     // 重置测试状态
     EVENT_COUNTER.store(0, Ordering::SeqCst);
+    COMPLETED_COUNTER.store(0, Ordering::SeqCst);
     *TEST_RUNNING.exclusive_access() = true;
     EVENT_QUEUE.exclusive_access().clear();
     COMPLETED_EVENTS.exclusive_access().clear();
@@ -357,7 +347,7 @@ pub fn run_performance_test() {
         high_priority_processor_entry as usize, 
         2*1024, 
         10, 
-        1000
+        100
     );
     
     // 创建中优先级处理器线程
@@ -365,7 +355,7 @@ pub fn run_performance_test() {
         "med_proc", 
         medium_priority_processor_entry as usize, 
         2*1024, 
-        15, 
+        10, 
         100
     );
     
@@ -374,8 +364,8 @@ pub fn run_performance_test() {
         "low_proc", 
         low_priority_processor_entry as usize, 
         2*1024, 
-        20, 
-        1000
+        10, 
+        100
     );
     
     // 创建结果分析器线程 (最低优先级)
@@ -383,11 +373,12 @@ pub fn run_performance_test() {
         "analyzer", 
         result_analyzer_entry as usize, 
         2*1024, 
-        25, 
-        1000
+        10, 
+        10
     );
     
     // 启动所有线程
+    hprintln!("性能测试线程已启动");
     let level = rt_hw_interrupt_disable();
     rt_thread_startup(generator);
     rt_thread_startup(high_processor);
@@ -396,5 +387,5 @@ pub fn run_performance_test() {
     rt_thread_startup(analyzer);
     rt_hw_interrupt_enable(level);
     
-    hprintln!("性能测试线程已启动");
+    
 } 
