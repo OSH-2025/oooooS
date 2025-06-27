@@ -16,6 +16,7 @@ pub mod test_interupt;
 pub mod example;
 pub mod test_cell;
 pub mod performance_test;
+pub mod switch_time_test;
 
 
 // #[cfg(feature = "test_timer")]

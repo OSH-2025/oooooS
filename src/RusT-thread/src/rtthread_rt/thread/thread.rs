@@ -124,6 +124,16 @@ impl Debug for RtThread {
     }
 }
 
+impl RtThread {
+    /// 线程名
+    /// 使用方法：hprint!("{}", XX.thread_name);
+    pub fn thread_name(&self) -> &str {
+        let name_str = core::str::from_utf8(&self.name)
+            .unwrap_or("invalid utf8")
+            .trim_end_matches('\0');
+        name_str
+    }
+}
 
 /// 上下文，用于线程切换
 #[derive(Debug)]

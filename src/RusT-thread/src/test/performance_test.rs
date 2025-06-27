@@ -8,6 +8,7 @@ use crate::rtthread_rt::hardware::*;
 use cortex_m_semihosting::hprintln;
 
 extern crate alloc;
+use core::str;
 use alloc::vec::Vec;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -82,7 +83,7 @@ lazy_static! {
     static ref COMPLETED_EVENTS: RTIntrFreeCell<Vec<Event>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
     static ref EVENT_COUNTER: AtomicU32 = AtomicU32::new(0);
     static ref COMPLETED_COUNTER: AtomicU32 = AtomicU32::new(0);
-    static ref TEST_RUNNING: RTIntrFreeCell<bool> = unsafe { RTIntrFreeCell::new(true) };
+    static ref RT_THREAD_LIST: RTIntrFreeCell<Vec<Arc<RtThread>>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
 }
 
 // 目标生成事件数
@@ -107,9 +108,7 @@ pub extern "C" fn event_generator_entry(arg: usize) -> () {
             hprintln!("生成事件 #{} 优先级: {}", event_id, priority);
             
             // 将事件添加到队列
-            let level = rt_hw_interrupt_disable();
             EVENT_QUEUE.exclusive_access().push(event);
-            rt_hw_interrupt_enable(level);
         }
     }
     
@@ -151,6 +150,9 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
+        // else {
+        //     rt_thread_sleep(rt_thread_self().unwrap(), 10);
+        // }
     }
     
     hprintln!("高优先级处理器停止");
@@ -190,6 +192,9 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
+        // else {
+        //     rt_thread_sleep(rt_thread_self().unwrap(), 50);
+        // }
     }
     
     hprintln!("中优先级处理器停止");
@@ -230,6 +235,9 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
+        // else {
+        //     rt_thread_sleep(rt_thread_self().unwrap(), 100);
+        // }
     }
     
     hprintln!("低优先级处理器停止");
@@ -242,10 +250,11 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     
     // 等待所有事件处理完成
     while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
-        // rt_thread_sleep(rt_thread_self().unwrap(), 100);
+        rt_thread_sleep(rt_thread_self().unwrap(), 100);
     }
     
-    // 再等待一段时间，确保所有处理线程都已退出
+    hprintln!("OK");
+    // // 再等待一段时间，确保所有处理线程都已退出
     // rt_thread_sleep(rt_thread_self().unwrap(), 200);
     
     // 分析结果
@@ -287,48 +296,47 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
             low_response_time += event.response_time();
         }
     }
-    
-    let avg_response_time = total_response_time as f32 / total_events as f32;
-    let avg_processing_time = total_processing_time as f32 / total_events as f32;
-    let avg_total_time = total_time as f32 / total_events as f32;
+
+    let avg_response_time = rt_tick_to_ms(total_response_time) as f32 / total_events as f32;
+    let avg_processing_time = rt_tick_to_ms(total_processing_time) as f32 / total_events as f32;
+    let avg_total_time = rt_tick_to_ms(total_time) as f32 / total_events as f32;
     
     hprintln!("性能测试结果:");
     hprintln!("总事件数: {}", total_events);
-    hprintln!("平均响应时间: {} ticks", avg_response_time);
-    hprintln!("平均处理时间: {} ticks", avg_processing_time);
-    hprintln!("平均总时间: {} ticks", avg_total_time);
+    hprintln!("平均响应时间: {} ms", avg_response_time);
+    hprintln!("平均处理时间: {} ms", avg_processing_time);
+    hprintln!("平均总时间: {} ms", avg_total_time);
     
     // 按优先级输出结果
     if high_count > 0 {
-        let high_avg = high_response_time as f32 / high_count as f32;
-        hprintln!("高优先级事件 (7-10): {} 个, 平均响应时间: {} ticks", 
+        let high_avg = rt_tick_to_ms(high_response_time) as f32 / high_count as f32;
+        hprintln!("高优先级事件 (7-10): {} 个, 平均响应时间: {} ms", 
                  high_count, high_avg);
     }
     
     if medium_count > 0 {
-        let medium_avg = medium_response_time as f32 / medium_count as f32;
-        hprintln!("中优先级事件 (4-6): {} 个, 平均响应时间: {} ticks", 
+        let medium_avg = rt_tick_to_ms(medium_response_time) as f32 / medium_count as f32;
+        hprintln!("中优先级事件 (4-6): {} 个, 平均响应时间: {} ms", 
                  medium_count, medium_avg);
     }
     
     if low_count > 0 {
-        let low_avg = low_response_time as f32 / low_count as f32;
-        hprintln!("低优先级事件 (1-3): {} 个, 平均响应时间: {} ticks", 
+        let low_avg = rt_tick_to_ms(low_response_time) as f32 / low_count as f32;
+        hprintln!("低优先级事件 (1-3): {} 个, 平均响应时间: {} ms", 
                  low_count, low_avg);
     }
     
     hprintln!("结果分析器停止");
-    hprintln!("性能测试完成");
+    hprintln!("测试完成");
 }
 
 /// 运行性能测试
 pub fn run_performance_test() {
-    hprintln!("开始性能测试...");
+    hprintln!("开始响应时间测试...");
     
     // 重置测试状态
     EVENT_COUNTER.store(0, Ordering::SeqCst);
     COMPLETED_COUNTER.store(0, Ordering::SeqCst);
-    *TEST_RUNNING.exclusive_access() = true;
     EVENT_QUEUE.exclusive_access().clear();
     COMPLETED_EVENTS.exclusive_access().clear();
     
@@ -337,8 +345,8 @@ pub fn run_performance_test() {
         "event_gen", 
         event_generator_entry as usize, 
         2*1024, 
-        10, 
-        10
+        15, 
+        50
     );
     
     // 创建高优先级处理器线程
@@ -355,7 +363,7 @@ pub fn run_performance_test() {
         "med_proc", 
         medium_priority_processor_entry as usize, 
         2*1024, 
-        10, 
+        15, 
         100
     );
     
@@ -364,7 +372,7 @@ pub fn run_performance_test() {
         "low_proc", 
         low_priority_processor_entry as usize, 
         2*1024, 
-        10, 
+        20, 
         100
     );
     
@@ -373,13 +381,14 @@ pub fn run_performance_test() {
         "analyzer", 
         result_analyzer_entry as usize, 
         2*1024, 
-        10, 
-        10
+        25, 
+        100
     );
     
     // 启动所有线程
     hprintln!("性能测试线程已启动");
     let level = rt_hw_interrupt_disable();
+    set_mfq_scheduling();
     rt_thread_startup(generator);
     rt_thread_startup(high_processor);
     rt_thread_startup(medium_processor);
