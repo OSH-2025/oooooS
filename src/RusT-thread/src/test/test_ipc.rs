@@ -110,19 +110,23 @@ pub fn run_ipc_test() {
     hprintln!("开始IPC测试...");
     
     // 创建测试线程
-    let thread_1 = rt_thread_create("test_ipc_thread_1", test_ipc_thread_1 as usize, 2*1024, 10, 1000);
-    let thread_2 = rt_thread_create("test_ipc_thread_2", test_ipc_thread_2 as usize, 2*1024, 12, 1000);
-    let thread_3 = rt_thread_create("test_ipc_thread_3", test_ipc_thread_3 as usize, 2*1024, 8, 1000);
-    let thread_4 = rt_thread_create("test_ipc_thread_4", test_ipc_thread_4 as usize, 2*1024, 14, 1000);
+    let thread_1 = rt_thread_create("test_thread_1", test_ipc_thread_1 as usize, 2*1024, 10, 1000);
+    hprintln!("thread_1: {:?}", thread_1);
+    let thread_2 = rt_thread_create("test_thread_2", test_ipc_thread_2 as usize, 2*1024, 10, 1000);
+    hprintln!("thread_2: {:?}", thread_2);
+    let thread_3 = rt_thread_create("test_thread_3", test_ipc_thread_3 as usize, 2*1024, 10, 1000);
+    hprintln!("thread_3: {:?}", thread_3);
+    let thread_4 = rt_thread_create("test_thread_4", test_ipc_thread_4 as usize, 2*1024, 14, 1000);
+    hprintln!("thread_4: {:?}", thread_4);
 
     // 禁用中断并启动线程
     let level = rt_hw_interrupt_disable();
     
     // 启动所有线程
     rt_thread_startup(thread_1);
-    rt_thread_startup(thread_2);
-    rt_thread_startup(thread_3);
-    rt_thread_startup(thread_4);
+    rt_thread_startup(thread_2.clone());
+    //rt_thread_startup(thread_3);
+    //rt_thread_startup(thread_4);
     
     // 重新启用中断
     rt_hw_interrupt_enable(level);
