@@ -69,8 +69,10 @@ pub extern "C" fn example_thread_3(arg: usize) -> () {
 /// 一个简单的线程
 pub extern "C" fn example_thread_4(arg: usize) -> () {
     hprintln!("example_thread_4...");
+    hprintln!("example_thread_4: level: {}", rt_hw_get_interrupt_level());
     let mut start_tick = rt_tick_get();
     hprintln!("start_tick: {:?}", start_tick);
+    rt_thread_sleep(rt_thread_self().unwrap(), 1000);
     loop {
         if rt_tick_get() - start_tick > 100 {
             hprintln!("example_thread_4...");
@@ -87,13 +89,15 @@ pub extern "C" fn example_thread_4(arg: usize) -> () {
 /// 3. 然后，2被唤醒，2，3交替运行（3先降低优先级，可能有一段时间2独占CPU）
 /// 4. 最后，3，4优先级降低至与4相同，2，3，4交替运行
 pub fn run_example() {
+    hprintln!("run_example: level: {}", rt_hw_get_interrupt_level());
     // hprintln!("run_example...");
     let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 10, 1000);
-    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 10, 1000);
+    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 17, 1000);
     let thread_3 = rt_thread_create("example_thread_3", example_thread_3 as usize, 2*1024, 10, 1000);
     let thread_4 = rt_thread_create("example_thread_4", example_thread_4 as usize, 2*1024, 14, 1000);
 
     let level = rt_hw_interrupt_disable();
+    hprintln!("run_example after disable: level: {}", level);
     rt_thread_startup(thread_1);
     rt_thread_startup(thread_2.clone());
     rt_thread_sleep(thread_2.clone(), 10000);

@@ -10,7 +10,6 @@
 use crate::test::example_mfq;
 use crate::test::example;
 use crate::test::performance_test;
-use crate::test::switch_time_test;
 use crate::rtthread_rt::thread::rt_thread_yield;
 
 use cortex_m_semihosting::hprintln;

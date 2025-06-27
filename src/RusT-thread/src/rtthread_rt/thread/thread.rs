@@ -281,7 +281,7 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
 /// @return RT_EOK: 挂起成功
 ///         RT_ERROR: 挂起失败
 pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
-    hprintln!("rt_thread_suspend: {:?}", thread);
+    // hprintln!("rt_thread_suspend: {:?} level: {}", thread, rt_hw_get_interrupt_level());
     let stat = thread.inner.exclusive_access().stat.get_stat();
     if (stat != (ThreadState::Ready as u8)) && (stat != (ThreadState::Running as u8)) {
         return RT_ERROR;
@@ -292,10 +292,12 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
     // 如果线程在就绪队列中，则将其从就绪队列中移除
     remove_thread(thread.clone());
-    // 调用调度器让出CPU
-    rt_schedule();
+    // hprintln!("rt_thread_suspend: remove_thread done level: {}", rt_hw_get_interrupt_level());
 
     rt_hw_interrupt_enable(level);
+    // hprintln!("rt_thread_suspend after enable: level: {}", rt_hw_get_interrupt_level());
+    // 调用调度器让出CPU
+    rt_schedule();
     RT_EOK
 }
 
@@ -306,50 +308,58 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
 /// @return RT_EOK: 睡眠成功
 ///         RT_ERROR: 睡眠失败
 pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
+    // hprintln!("rt_thread_sleep: level: {}", rt_hw_get_interrupt_level());
     // 检查线程状态：允许Ready和Running状态的线程睡眠
     let stat = thread.inner.exclusive_access().stat.get_stat();
     if (stat != (ThreadState::Ready as u8)) && (stat != (ThreadState::Running as u8)) {
+        hprintln!("rt_thread_suspend: thread not in ready or running state");
         return RT_ERROR;
     }
+    // hprintln!("rt_thread_sleep after check: level: {}", rt_hw_get_interrupt_level());
 
-    let level = rt_hw_interrupt_disable();
     // 设置错误状态为超时，表示线程正在等待
     thread.inner.exclusive_access().error = RT_ETIMEOUT;
 
-    // 挂起线程
-    rt_thread_suspend(thread.clone());
+    // hprintln!("rt_thread_sleep after set error: level: {}", rt_hw_get_interrupt_level());
 
     // 创建睡眠定时器回调
     let thread_clone = thread.clone();
     let timer_callback = move || {
-        hprintln!("timer_callback: resume {}", thread_clone.clone().thread_name());
+        hprintln!("timer_callback: resume thread");
+        let timer = thread_clone.inner.exclusive_access().timer.take().unwrap();
+        rt_timer_stop(&timer);
+        // 清空定时器
+        thread_clone.inner.exclusive_access().timer = None;
+        // 清空错误状态
+        thread_clone.inner.exclusive_access().error = 0;
         // 在定时器回调中恢复线程
         rt_thread_resume(thread_clone.clone());
     };
 
-    // 创建单次定时器（不是周期定时器）
+    // hprintln!("rt_thread_sleep after timer callback: level: {}", rt_hw_get_interrupt_level());
+    if thread.inner.exclusive_access().timer.is_some() {
+        hprintln!("Warning: rt_thread_sleep: timer already exists");
+        return RT_ERROR;
+    }
+    // 创建单次定时器
     let timer = Arc::new(Mutex::new(RtTimer::new(
-        "rt_thread_sleep",
+        core::str::from_utf8(&thread.name).unwrap(),
         0,
-        0x0,  // 单次定时器，不是周期定时器
+        0x0,  // 单次定时器0，不是周期定时器2
         Some(Box::new(timer_callback)),
         tick as u32,
         tick as u32,
     )));
+    // 将定时器句柄保存到线程中，以便需要时可以停止
     
+    thread.inner.exclusive_access().timer = Some(timer.clone());   
+    // hprintln!("rt_thread_sleep after set timer: level: {}", rt_hw_get_interrupt_level());
     // 启动定时器
     timer::rt_timer_start(timer.clone());
-    
-    // 将定时器句柄保存到线程中，以便需要时可以停止
-    // 注意：这里需要修改线程结构体以支持睡眠定时器
-    thread.inner.exclusive_access().timer = Some(timer);
-
-    // 调用调度器让出CPU
-    rt_schedule();
-
-    // 恢复中断
-    rt_hw_interrupt_enable(level);
-    
+    // hprintln!("rt_thread_sleep after timer start: level: {}", rt_hw_get_interrupt_level());
+    // 挂起线程
+    rt_thread_suspend(thread.clone());
+    // hprintln!("rt_thread_sleep after suspend: level: {}", rt_hw_get_interrupt_level());
     RT_EOK
 }
 
@@ -395,14 +405,14 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
 
     let level = rt_hw_interrupt_disable();
     
-    // reset_priority
+    // // reset_priority
     let init_priority = thread.inner.exclusive_access().init_priority.clone();
     rt_thread_set_priority(thread.clone(), init_priority);
-
 
     thread.inner.exclusive_access().stat = ThreadState::Ready;
     thread_priority_table::insert_thread(thread.clone());
     rt_hw_interrupt_enable(level);
+    // rt_schedule();
     RT_EOK
 }
 
