@@ -35,10 +35,16 @@ pub extern "C" fn thread2_enter(arg: usize) -> () {
 pub fn test_insert_thread() {
     // insert thread
     let thread1 = rt_thread_create("thread1",thread1_enter as usize, 1024,4,1000);
+    // 设置线程状态为Ready后再插入
+    thread1.inner.exclusive_access().stat = ThreadState::Ready;
     insert_thread(thread1.clone());
+    
     let thread2 = rt_thread_create("thread2",thread1_enter as usize, 1024,4,1000);
+    thread2.inner.exclusive_access().stat = ThreadState::Ready;
     insert_thread(thread2);
+    
     let thread3 = rt_thread_create("thread3",thread1_enter as usize, 1024,11,1000);
+    thread3.inner.exclusive_access().stat = ThreadState::Ready;
     insert_thread(thread3);
     
     look_at_priority_table();

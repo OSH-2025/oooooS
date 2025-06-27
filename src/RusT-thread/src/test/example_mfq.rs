@@ -37,12 +37,6 @@ pub extern "C" fn example_thread_2(arg: usize) -> () {
             hprintln!("example_thread_2...");
             start_tick = rt_tick_get();
         }
-        if rt_tick_get() - tic > 20000 {
-            // rt_thread_suspend(rt_thread_self().unwrap());
-            if rt_thread_self().unwrap().inner.exclusive_access().current_priority == 10 {
-                rt_thread_set_priority(rt_thread_self().unwrap(), 14);
-            }
-        }
     }
 }
 
@@ -56,12 +50,6 @@ pub extern "C" fn example_thread_3(arg: usize) -> () {
         if rt_tick_get() - start_tick > 100 {
             hprintln!("example_thread_3...");
             start_tick = rt_tick_get();
-        }
-        if rt_tick_get() - tic > 20000 {
-            // rt_thread_suspend(rt_thread_self().unwrap());
-            if rt_thread_self().unwrap().inner.exclusive_access().current_priority == 10 {
-                rt_thread_set_priority(rt_thread_self().unwrap(), 14);
-            }
         }
     }
 }
@@ -88,12 +76,13 @@ pub extern "C" fn example_thread_4(arg: usize) -> () {
 /// 4. 最后，3，4优先级降低至与4相同，2，3，4交替运行
 pub fn run_example() {
     // hprintln!("run_example...");
-    let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 10, 1000);
-    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 10, 1000);
-    let thread_3 = rt_thread_create("example_thread_3", example_thread_3 as usize, 2*1024, 10, 1000);
-    let thread_4 = rt_thread_create("example_thread_4", example_thread_4 as usize, 2*1024, 14, 1000);
+    let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 2, 1000);
+    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 1, 1000);
+    let thread_3 = rt_thread_create("example_thread_3", example_thread_3 as usize, 2*1024, 5, 1000);
+    let thread_4 = rt_thread_create("example_thread_4", example_thread_4 as usize, 2*1024, 6, 1000);
 
     let level = rt_hw_interrupt_disable();
+    set_mfq_scheduling();
     rt_thread_startup(thread_1);
     rt_thread_startup(thread_2.clone());
     rt_thread_sleep(thread_2.clone(), 10000);

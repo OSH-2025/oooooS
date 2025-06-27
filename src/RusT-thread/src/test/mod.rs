@@ -24,7 +24,7 @@ pub mod test_timer;
 pub mod test_small_mem;
 #[cfg(feature = "test_allocator_compare")]
 pub mod test_allocator_compare;
-
+pub mod example_mfq;
 pub mod test_all;
 
 

@@ -7,16 +7,27 @@ pub mod scheduler;
 pub mod idle;
 pub mod thread_priority_table;
 pub mod kstack;
+pub mod scheduling_policy;
 
 // 重新导出所有公共项
-pub use self::scheduler::
-{   Scheduler, RT_SCHEDULER, 
+pub use self::scheduler::{
+    Scheduler, RT_SCHEDULER, 
     rt_schedule_start, 
     rt_schedule_lock, 
     rt_schedule_unlock, 
     get_current_thread, 
     rt_schedule
 };
+pub use self::scheduling_policy::{
+    SchedulingPolicy,
+    PrioritySchedulingPolicy,
+    set_priority_scheduling,
+    get_current_scheduling_policy_name,
+    MultiLevelFeedbackQueuePolicy,
+    set_mfq_scheduling,
+};
+
+
 
 pub use self::idle::{init_idle};
 pub use self::thread::{
@@ -31,7 +42,9 @@ pub use self::thread::{
     rt_thread_resume,
     rt_thread_suspend,
     rt_thread_control,
-    rt_thread_sleep
+    rt_thread_sleep,
+    rt_thread_set_priority,
+    rt_thread_aging
 };
 pub use self::thread_priority_table::{
     ThreadPriorityTable,
