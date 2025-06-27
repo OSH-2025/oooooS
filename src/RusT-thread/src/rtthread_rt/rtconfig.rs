@@ -5,10 +5,10 @@
 
 /// 最大优先级
 #[cfg(feature = "tiny_ffs")]
-pub const RT_THREAD_PRIORITY_MAX: usize = 32;
+pub const RT_THREAD_PRIORITY_MAX: u8 = 32;
 
 #[cfg(feature = "full_ffs")]
-pub const RT_THREAD_PRIORITY_MAX: usize = 256;
+pub const RT_THREAD_PRIORITY_MAX: u8 = 256;
 
 /// 时钟频率
 pub const RT_TICK_PER_SECOND: u32 = 1000;

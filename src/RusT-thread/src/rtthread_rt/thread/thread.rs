@@ -9,6 +9,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use spin::Mutex;
 use alloc::boxed::Box;
+use stm32f4xx_hal::pac::cryp::init;
 
 use crate::rtthread_rt::rtdef::*;
 use crate::rtthread_rt::thread::*;
@@ -46,6 +47,12 @@ pub struct RtThreadInner {
     /// 当前线程的优先级
     pub current_priority: u8,
     
+    /// init priority
+    /// 线程的初始优先级
+    /// 静态，初始化时设置，之后不再自动改变（除非用户手动调用rt_thread_set_init_priority）
+    /// (如果采用MFQ调度策略，current_priority会随着线程状态变化而变化)
+    pub init_priority: u8,
+    
     /// number mask
     /// 这个字段用于记录线程的优先级掩码，用于快速计算线程的优先级
     /// 仅在cfg(feature = "full_ffs")时使用
@@ -80,11 +87,8 @@ pub struct RtThreadInner {
 
     /// 线程的栈指针
     pub stack_pointer: u32,
-    
 
-    /// user data
-    /// 用户数据
-    pub user_data: usize,
+
 }
 
 
@@ -150,7 +154,20 @@ impl RtContext {
 pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u8, tick: usize) -> Arc<RtThread> {
     // todo 健壮性检查：同名线程是否存在、栈大小是否合理、优先级是否合理、时间片是否合理
 
-    // hprintln!("in rt_thread_create:");
+    // 检查线程是否存在
+    // if RT_THREAD_LIST.exclusive_access().iter().any(|thread| thread.name == name) {
+    //     hprintln!("Warning: thread {} already exists", name);
+    // }
+    // if stack_size > RT_THREAD_STACK_SIZE_MAX {
+    //     hprintln!("Warning: stack_size {} is too large", stack_size);
+    // }
+    if priority > RT_THREAD_PRIORITY_MAX {
+        hprintln!("Warning: priority {} is too large", priority);
+    }
+    // if tick > RT_THREAD_TICK_MAX {
+    //     hprintln!("Warning: tick {} is too large", tick);
+    // }
+
     let mut kernel_stack = KernelStack::new(stack_size);
     let stack_pointer = unsafe {
         rt_hw_stack_init(
@@ -172,6 +189,7 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         error: 0,
         stat: ThreadState::Init,
         current_priority: priority,
+        init_priority: priority,
         number_mask: 0,
         high_mask: 0,
         entry,
@@ -179,7 +197,6 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         remaining_tick: tick,
         kernel_stack,
         stack_pointer: stack_pointer as u32,
-        user_data: 0,
         timer: None,
         })
     };
@@ -367,6 +384,12 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
     }
 
     let level = rt_hw_interrupt_disable();
+    
+    // reset_priority
+    let init_priority = thread.inner.exclusive_access().init_priority.clone();
+    rt_thread_set_priority(thread.clone(), init_priority);
+
+
     thread.inner.exclusive_access().stat = ThreadState::Ready;
     thread_priority_table::insert_thread(thread.clone());
     rt_hw_interrupt_enable(level);
@@ -390,13 +413,19 @@ pub fn rt_thread_yield() -> RtErrT {
     RT_EOK
 }
 
-
-pub fn rt_thread_set_priority(thread: Arc<RtThread>, priority: u8) -> RtErrT {
+/// 线程设置优先级
+/// 设置线程的优先级，并将其从就绪队列中移除再插入
+/// @param thread 线程对象
+/// @param priority 优先级
+/// @return RT_EOK: 设置优先级成功
+///         RT_ERROR: 设置优先级失败
+pub fn rt_thread_set_priority(thread: Arc<RtThread>,mut priority: u8) -> RtErrT {
     hprintln!("rt_thread_set_priority: {:?} to {}", thread, priority);
-    if usize::from(priority) > RT_THREAD_PRIORITY_MAX {
-        return RT_ERROR;
+    if priority > RT_THREAD_PRIORITY_MAX - 1 {// 饱和处理
+        priority = RT_THREAD_PRIORITY_MAX - 1;
     }
     let mut inner = thread.inner.exclusive_access();
+    // hprintln!("rt_thread_set_priority: get inner");
     inner.current_priority = priority;
     let level = rt_hw_interrupt_disable();
     if inner.stat.get_stat() == (ThreadState::Ready as u8) {// 如果线程在就绪队列中，则将其从就绪队列中移除再插入
@@ -412,10 +441,12 @@ pub fn rt_thread_set_priority(thread: Arc<RtThread>, priority: u8) -> RtErrT {
         }
         insert_thread(thread.clone());
     }
-    else if inner.stat.get_stat() == (ThreadState::Running as u8) {// 如果线程在运行状态，则直接设置优先级
-        inner.current_priority = priority;
-        RT_SCHEDULER.exclusive_access().set_current_priority(priority);
-    }
+    // else if inner.stat.get_stat() == (ThreadState::Running as u8) {// 如果线程在运行状态，则直接设置优先级
+    //     hprintln!("rt_thread_set_priority: running");
+    //     inner.current_priority = priority;
+        // RT_SCHEDULER.exclusive_access().set_current_priority(priority);// ! 死锁典型范例 （这里不能调用rt_thread_set_priority，因为会导致死锁）
+    //     hprintln!("rt_thread_set_priority: running done");
+    // }
     else {// 如果线程不在就绪队列中，则直接设置优先级
         inner.current_priority = priority;
         if cfg!(feature = "full_ffs") {
@@ -427,6 +458,38 @@ pub fn rt_thread_set_priority(thread: Arc<RtThread>, priority: u8) -> RtErrT {
             inner.number_mask = 1 << priority;
         }
     }
+    // hprintln!("rt_thread_set_priority done");
     rt_hw_interrupt_enable(level);
+    RT_EOK
+}
+
+/// 线程老化
+/// 线程优先级每轮+1，直到达到最大优先级（之后恢复为init_priority）
+/// @param thread 线程对象
+/// @return RT_EOK: 老化成功
+///         RT_ERROR: 老化失败
+pub fn rt_thread_aging(thread: Arc<RtThread>) -> RtErrT {
+    let mut priority = thread.inner.exclusive_access().current_priority.clone();
+    if priority < RT_THREAD_PRIORITY_MAX - 2 {
+        priority += 1;
+    }
+    else {
+        priority = thread.inner.exclusive_access().init_priority.clone();
+    }
+    let level = rt_hw_interrupt_disable();
+    rt_thread_set_priority(thread.clone(), priority);
+    rt_hw_interrupt_enable(level);
+    RT_EOK
+}
+
+/// 线程设置初始优先级
+/// 设置线程的初始优先级
+/// @param thread 线程对象
+/// @param priority 优先级
+/// @return RT_EOK: 设置初始优先级成功
+///         RT_ERROR: 设置初始优先级失败
+pub fn rt_thread_set_init_priority(thread: Arc<RtThread>, priority: u8) -> RtErrT {
+    let mut inner = thread.inner.exclusive_access();
+    inner.init_priority = priority;
     RT_EOK
 }

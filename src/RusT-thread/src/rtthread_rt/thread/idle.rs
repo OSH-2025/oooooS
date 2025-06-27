@@ -7,7 +7,7 @@
 use cortex_m::asm;
 use cortex_m_semihosting::hprintln;
 
-use crate::rtthread_rt::thread::thread::*;
+use crate::rtthread_rt::thread::*;
 use crate::rtthread_rt::rtconfig;
 use crate::rtthread_rt::thread::thread_priority_table;
 use crate::rtthread_rt::rtdef::ThreadState;
@@ -17,7 +17,9 @@ use crate::rtthread_rt::rtdef::ThreadState;
 pub extern "C" fn idle_entry(arg: usize) -> () {
     hprintln!("idle_entry...");
     loop{
+        hprintln!("idle_entry loop...");
         asm::nop;
+        rt_thread_yield();
     }
     hprintln!("idle_entry finished.");
 }

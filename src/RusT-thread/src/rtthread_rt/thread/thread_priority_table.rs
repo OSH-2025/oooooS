@@ -27,7 +27,7 @@ lazy_static! {
 
 /// 线程优先级表
 pub struct ThreadPriorityTable {
-    table: [VecDeque<Arc<RtThread>>; RT_THREAD_PRIORITY_MAX],
+    table: [VecDeque<Arc<RtThread>>; RT_THREAD_PRIORITY_MAX as usize],
     #[cfg(feature = "full_ffs")]
     ready_table: [u8; 32],
     ready_priority_group: u32,
@@ -36,7 +36,7 @@ pub struct ThreadPriorityTable {
 impl ThreadPriorityTable {
     /// 创建一个线程优先级表
     fn new() -> Self {
-        let mut table = Vec::with_capacity(RT_THREAD_PRIORITY_MAX);
+        let mut table = Vec::with_capacity(RT_THREAD_PRIORITY_MAX as usize);
         for _ in 0..RT_THREAD_PRIORITY_MAX {
             table.push(VecDeque::new());
         }
@@ -172,7 +172,7 @@ impl ThreadPriorityTable {
     /// 验证所有在优先级列表中的线程状态是否为Ready
     pub fn validate_consistency(&self) -> bool {
         for priority in 0..RT_THREAD_PRIORITY_MAX {
-            for thread in &self.table[priority] {
+            for thread in &self.table[priority as usize] {
                 let thread_stat = thread.inner.exclusive_access().stat.get_stat();
                 if thread_stat != (ThreadState::Ready as u8) {
                     hprintln!("Inconsistency found: Thread {:?} in priority table with state {}", thread, thread_stat);
@@ -302,7 +302,7 @@ pub fn output_priority_table(){
 
     for i in 0..RT_THREAD_PRIORITY_MAX {
         hprintln!("priority: {}", i);
-        for thread in priority_table.table[i].iter() {
+        for thread in priority_table.table[i as usize].iter() {
             hprintln!("thread: {:?}", thread);
         }
     }

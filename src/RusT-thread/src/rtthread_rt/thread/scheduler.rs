@@ -96,7 +96,7 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     // 使用调度策略选择下一个线程
     let (to_thread, need_insert_from_thread) = scheduler.get_scheduling_policy()
         .select_next_thread(&scheduler.current_thread)?;
-
+    // hprintln!("prepare_thread_switch: to_thread: {:?}", to_thread);
     // ----------------------------检查是否需要切换线程以及准备工作（更新当前线程）----------------------------
     if to_thread != scheduler.current_thread.clone().unwrap() {// 需要切换线程
         let priority_of_to_thread = to_thread.inner.exclusive_access().current_priority;
@@ -137,7 +137,10 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
             RT_THREAD_PRIORITY_TABLE.exclusive_access().push_back_to_priority(priority, from.clone());
         }
     }
-    
+    // if let Some(from) = &from_thread {
+    //     hprintln!("execute_thread_switch: from_thread: {:?} to_thread: {:?}", from, to_thread);
+    // }
+
 
     // 设置新线程状态为运行
     to_thread.inner.exclusive_access().stat = ThreadState::Running;

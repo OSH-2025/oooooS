@@ -20,6 +20,8 @@ use crate::rtthread_rt::thread::*;
 pub trait SchedulingPolicy: Send + Sync {
     /// 选择下一个要运行的线程
     /// 
+    /// 注意：调用该函数时，current_thread在运行中，to_thread应该在就绪队列中
+    /// 
     /// # 参数
     /// * `current_thread` - 当前运行的线程
     /// 
@@ -105,9 +107,10 @@ impl SchedulingPolicy for MultiLevelFeedbackQueuePolicy {
         current_thread: &Option<Arc<RtThread>>,
     ) -> Option<(Arc<RtThread>, bool)> {
         // 实现多级反馈队列调度逻辑
-        // 这里可以调用Aging()函数来实现优先级调整
-        
-        // 暂时使用优先级调度作为基础
+        if let Some(current_thread) = current_thread {
+            rt_thread_aging(current_thread.clone());
+        }
+        // 使用优先级调度作为基础
         let priority_policy = PrioritySchedulingPolicy;
         priority_policy.select_next_thread(current_thread)
     }
@@ -117,20 +120,7 @@ impl SchedulingPolicy for MultiLevelFeedbackQueuePolicy {
     }
 }
 
-/// 老化算法
-/// 
-/// 如果启用MFQ（多级反馈队列），则需要使用老化算法
-/// 
-/// 常见的实现是：
-/// 
-/// 新创建的线程从最高优先级开始
-/// 如果线程用完时间片，降低其优先级
-/// 如果线程主动让出CPU，保持当前优先级
-/// 低优先级线程会逐渐提升优先级，防止饥饿
-/// 
-/// 故在每次线程切换时，调用以下函数，实现优先级的动态调整
-fn Aging(){
-}
+
 
 /// 设置调度策略为优先级调度
 pub fn set_priority_scheduling() {
