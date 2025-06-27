@@ -68,6 +68,11 @@ pub fn rt_tick_from_millisecond(ms: i32) -> u32 {
     }
 }
 
+/// 将tick数转换为毫秒
+pub fn rt_tick_to_ms(tick: u32) -> u32 {
+    (tick * 1000) / RT_TICK_PER_SECOND
+}
+
 /// 获取自启动以来经过的毫秒数
 pub fn rt_tick_get_millisecond() -> u32 {
     if 1000 % RT_TICK_PER_SECOND == 0 {

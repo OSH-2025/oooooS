@@ -10,8 +10,8 @@ pub const RT_THREAD_PRIORITY_MAX: usize = 32;
 #[cfg(feature = "full_ffs")]
 pub const RT_THREAD_PRIORITY_MAX: usize = 256;
 
-/// 时钟频率
-pub const RT_TICK_PER_SECOND: u32 = 1000;
+/// Tick频率,不是真正的机器时钟频率
+pub const RT_TICK_PER_SECOND: u32 = 10000;
 
 /// 对齐大小
 pub const RT_ALIGN_SIZE: u32 = 4;

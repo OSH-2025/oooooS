@@ -18,6 +18,7 @@ pub extern "C" fn main_entry(arg: usize) -> () {
     hprintln!("main_entry...");
     // example::run_example();
     // performance_test::run_performance_test();
+    // performance_test::test_thread_switch_time();
     // 用户主线程入口
     loop{
         asm::nop;
