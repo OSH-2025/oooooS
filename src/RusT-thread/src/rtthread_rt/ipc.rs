@@ -4,9 +4,17 @@
 //! 包括消息队列、信号量、互斥锁、事件等
 //! 出于实时性考虑，这里目前只实现 PRIO 模式（优先级模式），不去实现 FIFO 模式（先进先出模式）
 //! 结构体：
-//! 
+//!     IPCBase: 基础 IPC 结构体
+//!     Semaphore: 信号量结构体
 //! 函数：
-//! 
+//!     rt_ipc_init: 初始化 IPC 结构体
+//!     rt_ipc_list_suspend: 将线程挂起，并按优先级插入线程队列
+//!     rt_ipc_list_resume: 将线程唤醒
+//!     rt_ipc_list_resume_all: 将所有线程唤醒
+//!     rt_sem_create: 创建并初始化 semaphore 结构体
+//!     rt_sem_delete: 删除 semaphore 结构体
+//!     rt_sem_take: 获取 semaphore
+//!     rt_sem_release: 释放 semaphore
 
 use lazy_static::lazy_static;
 
@@ -180,11 +188,12 @@ pub fn rt_sem_take(sem: Arc<Semaphore>, timeout: usize) -> RtErrT {
             rt_ipc_list_suspend(sem.parent.exclusive_session(|ipc| ipc.clone()), thread.clone());
             if timeout > 0 {
                 let mut time = timeout as u32;
-                // todo
-                // if let Some(timer) = thread.inner.exclusive_session(|inner| inner.timer.as_ref()) {
-                //     rt_timer_control(timer, TimerControlCmd::SetTime(time));
-                //     rt_timer_start(timer.clone());
-                // }
+                thread.inner.exclusive_session(|inner| {
+                    if let Some(timer) = &inner.timer {
+                        rt_timer_control(timer, TimerControlCmd::SetTime(time));
+                        rt_timer_start(timer.clone());
+                    }
+                });
             }
             rt_hw_interrupt_enable(level);
             rt_schedule();
