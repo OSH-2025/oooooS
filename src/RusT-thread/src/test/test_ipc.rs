@@ -7,8 +7,13 @@ use crate::rtthread_rt::thread::*;
 use crate::rtthread_rt::timer::*;
 use crate::rtthread_rt::hardware::*;
 use crate::rtthread_rt::ipc::*;
+use crate::rtthread_rt::kservice::RTIntrFreeCell;
+use crate::rtthread_rt::rtdef::*;
 use cortex_m_semihosting::hprintln;
 use alloc::string::String;
+use lazy_static::lazy_static;
+use alloc::sync::Arc;
+use spin::Mutex;
 
 /// 测试线程1：测试IPC挂起功能
 pub extern "C" fn test_ipc_thread_1(arg: usize) -> () {
@@ -31,6 +36,7 @@ pub extern "C" fn test_ipc_thread_1(arg: usize) -> () {
             break;
         }
     }
+    rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 测试线程2：测试IPC唤醒功能
@@ -57,6 +63,7 @@ pub extern "C" fn test_ipc_thread_2(arg: usize) -> () {
             break;
         }
     }
+    rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 测试线程3：测试IPC优先级队列
@@ -80,6 +87,7 @@ pub extern "C" fn test_ipc_thread_3(arg: usize) -> () {
             break;
         }
     }
+    rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 测试线程4：测试IPC全部唤醒功能
@@ -103,6 +111,7 @@ pub extern "C" fn test_ipc_thread_4(arg: usize) -> () {
             break;
         }
     }
+    rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 运行IPC测试
@@ -110,13 +119,14 @@ pub fn run_ipc_test() {
     hprintln!("开始IPC测试...");
     
     // 创建测试线程
-    let thread_1 = rt_thread_create("test_thread_1", test_ipc_thread_1 as usize, 2*1024, 10, 1000);
+
+    let thread_1 = rt_thread_create("test_thread_1", test_ipc_thread_1 as usize, 2*1024, 10, 200);
     hprintln!("thread_1: {:?}", thread_1);
-    let thread_2 = rt_thread_create("test_thread_2", test_ipc_thread_2 as usize, 2*1024, 10, 1000);
+    let thread_2 = rt_thread_create("test_thread_2", test_ipc_thread_2 as usize, 2*1024, 10, 200);
     hprintln!("thread_2: {:?}", thread_2);
-    let thread_3 = rt_thread_create("test_thread_3", test_ipc_thread_3 as usize, 2*1024, 10, 1000);
+    let thread_3 = rt_thread_create("test_thread_3", test_ipc_thread_3 as usize, 2*1024, 14, 200);
     hprintln!("thread_3: {:?}", thread_3);
-    let thread_4 = rt_thread_create("test_thread_4", test_ipc_thread_4 as usize, 2*1024, 14, 1000);
+    let thread_4 = rt_thread_create("test_thread_4", test_ipc_thread_4 as usize, 2*1024, 16, 200);
     hprintln!("thread_4: {:?}", thread_4);
 
     // 禁用中断并启动线程
@@ -125,8 +135,8 @@ pub fn run_ipc_test() {
     // 启动所有线程
     rt_thread_startup(thread_1);
     rt_thread_startup(thread_2.clone());
-    //rt_thread_startup(thread_3);
-    //rt_thread_startup(thread_4);
+    rt_thread_startup(thread_3);
+    rt_thread_startup(thread_4);
     
     // 重新启用中断
     rt_hw_interrupt_enable(level);
@@ -180,4 +190,457 @@ pub fn test_ipc_queue_operations() {
     hprintln!("唤醒后IPC队列长度: {}", queue_len_after);
     
     hprintln!("IPC队列操作测试完成");
+}
+
+/// 哲学家进餐问题测试
+/// 
+/// 使用信号量实现哲学家进餐问题的解决方案
+/// 通过避免死锁的算法来确保所有哲学家都能进餐
+
+lazy_static! {
+    // 5个叉子的信号量
+    static ref FORKS: [Arc<Semaphore>; 5] = [
+        Arc::new(Semaphore {
+            parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("fork_0", 1)) },
+            count: Mutex::new(1),
+        }),
+        Arc::new(Semaphore {
+            parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("fork_1", 1)) },
+            count: Mutex::new(1),
+        }),
+        Arc::new(Semaphore {
+            parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("fork_2", 1)) },
+            count: Mutex::new(1),
+        }),
+        Arc::new(Semaphore {
+            parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("fork_3", 1)) },
+            count: Mutex::new(1),
+        }),
+        Arc::new(Semaphore {
+            parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("fork_4", 1)) },
+            count: Mutex::new(1),
+        }),
+    ];
+    
+    // 限制同时进餐的哲学家数量，避免死锁
+    static ref ROOM: Arc<Semaphore> = Arc::new(Semaphore {
+        parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("room", 1)) },
+        count: Mutex::new(4), // 最多4个哲学家同时进餐
+    });
+}
+
+/// 哲学家线程函数
+/// @param arg 哲学家编号 (0-4)
+pub extern "C" fn philosopher_thread_1() -> () {
+    let philosopher_id = 1;
+    let left_fork = philosopher_id;
+    let right_fork = (philosopher_id + 1) % 5;
+    
+    hprintln!("哲学家 {} 开始思考...", philosopher_id);
+    
+    let tic = rt_tick_get();
+    let mut start_tick = rt_tick_get();
+    
+    loop {
+        // 思考一段时间
+        if rt_tick_get() - start_tick > 500 {
+            hprintln!("哲学家 {} 正在思考...", philosopher_id);
+            start_tick = rt_tick_get();
+        }
+        
+        // 每隔一段时间尝试进餐
+        if rt_tick_get() - tic > 2000 {
+            hprintln!("哲学家 {} 感到饥饿，准备进餐...", philosopher_id);
+            
+            // 进入餐厅
+            if rt_sem_take(ROOM.clone(), 1000) == RT_EOK {
+                hprintln!("哲学家 {} 进入餐厅", philosopher_id);
+                
+                // 拿起左叉子
+                if rt_sem_take(FORKS[left_fork].clone(), 1000) == RT_EOK {
+                    hprintln!("哲学家 {} 拿起左叉子 {}", philosopher_id, left_fork);
+                    
+                    // 拿起右叉子
+                    if rt_sem_take(FORKS[right_fork].clone(), 1000) == RT_EOK {
+                        hprintln!("哲学家 {} 拿起右叉子 {}，开始进餐", philosopher_id, right_fork);
+                        
+                        // 进餐一段时间
+                        let eat_start = rt_tick_get();
+                        while rt_tick_get() - eat_start < 300 {
+                            // 进餐中...
+                        }
+                        
+                        hprintln!("哲学家 {} 进餐完成", philosopher_id);
+                        
+                        // 放下右叉子
+                        rt_sem_release(FORKS[right_fork].clone());
+                        hprintln!("哲学家 {} 放下右叉子 {}", philosopher_id, right_fork);
+                    } else {
+                        hprintln!("哲学家 {} 无法拿起右叉子 {}", philosopher_id, right_fork);
+                    }
+                    
+                    // 放下左叉子
+                    rt_sem_release(FORKS[left_fork].clone());
+                    hprintln!("哲学家 {} 放下左叉子 {}", philosopher_id, left_fork);
+                } else {
+                    hprintln!("哲学家 {} 无法拿起左叉子 {}", philosopher_id, left_fork);
+                }
+                
+                // 离开餐厅
+                rt_sem_release(ROOM.clone());
+                hprintln!("哲学家 {} 离开餐厅", philosopher_id);
+            } else {
+                hprintln!("哲学家 {} 无法进入餐厅", philosopher_id);
+            }
+            
+            // 重置计时器，继续循环
+            break;
+        }
+    }
+    
+    // 删除线程
+    rt_thread_delete(rt_thread_self().unwrap());
+}
+
+pub extern "C" fn philosopher_thread_2() -> () {
+    let philosopher_id = 2;
+    let left_fork = philosopher_id;
+    let right_fork = (philosopher_id + 1) % 5;
+    
+    hprintln!("哲学家 {} 开始思考...", philosopher_id);
+    
+    let tic = rt_tick_get();
+    let mut start_tick = rt_tick_get();
+    
+    loop {
+        // 思考一段时间
+        if rt_tick_get() - start_tick > 500 {
+            hprintln!("哲学家 {} 正在思考...", philosopher_id);
+            start_tick = rt_tick_get();
+        }
+        
+        // 每隔一段时间尝试进餐
+        if rt_tick_get() - tic > 2000 {
+            hprintln!("哲学家 {} 感到饥饿，准备进餐...", philosopher_id);
+
+            // 进入餐厅
+            if rt_sem_take(ROOM.clone(), 1000) == RT_EOK {
+                hprintln!("哲学家 {} 进入餐厅", philosopher_id);
+                
+                // 拿起左叉子
+                if rt_sem_take(FORKS[left_fork].clone(), 1000) == RT_EOK {
+                    hprintln!("哲学家 {} 拿起左叉子 {}", philosopher_id, left_fork);
+                    
+                    // 拿起右叉子
+                    if rt_sem_take(FORKS[right_fork].clone(), 1000) == RT_EOK {
+                        hprintln!("哲学家 {} 拿起右叉子 {}，开始进餐", philosopher_id, right_fork);
+                        
+                        // 进餐一段时间
+                        let eat_start = rt_tick_get();
+                        while rt_tick_get() - eat_start < 300 {
+                            // 进餐中...
+                        }
+                        
+                        hprintln!("哲学家 {} 进餐完成", philosopher_id);
+                        
+                        // 放下右叉子
+                        rt_sem_release(FORKS[right_fork].clone());
+                        hprintln!("哲学家 {} 放下右叉子 {}", philosopher_id, right_fork);
+                    } else {
+                        hprintln!("哲学家 {} 无法拿起右叉子 {}", philosopher_id, right_fork);
+                    }
+
+                    // 放下左叉子
+                    rt_sem_release(FORKS[left_fork].clone());
+                    hprintln!("哲学家 {} 放下左叉子 {}", philosopher_id, left_fork);
+                } else {
+                    hprintln!("哲学家 {} 无法拿起左叉子 {}", philosopher_id, left_fork);
+                }
+
+                // 离开餐厅
+                rt_sem_release(ROOM.clone());
+                hprintln!("哲学家 {} 离开餐厅", philosopher_id);
+            } else {
+                hprintln!("哲学家 {} 无法进入餐厅", philosopher_id);
+            }
+        }
+    }
+    rt_thread_delete(rt_thread_self().unwrap());
+}
+
+pub extern "C" fn philosopher_thread_3() -> () {
+    let philosopher_id = 3;
+    let left_fork = philosopher_id;
+    let right_fork = (philosopher_id + 1) % 5;
+    
+    hprintln!("哲学家 {} 开始思考...", philosopher_id);
+    
+    let tic = rt_tick_get();
+    let mut start_tick = rt_tick_get();
+    
+    loop {
+        // 思考一段时间
+        if rt_tick_get() - start_tick > 500 {
+            hprintln!("哲学家 {} 正在思考...", philosopher_id);
+            start_tick = rt_tick_get();
+        }
+        
+        // 每隔一段时间尝试进餐
+        if rt_tick_get() - tic > 2000 {
+            hprintln!("哲学家 {} 感到饥饿，准备进餐...", philosopher_id);
+            
+            // 进入餐厅
+            if rt_sem_take(ROOM.clone(), 1000) == RT_EOK {
+                hprintln!("哲学家 {} 进入餐厅", philosopher_id);
+                
+                // 拿起左叉子
+                if rt_sem_take(FORKS[left_fork].clone(), 1000) == RT_EOK {
+                    hprintln!("哲学家 {} 拿起左叉子 {}", philosopher_id, left_fork);
+                    
+                    // 拿起右叉子
+                    if rt_sem_take(FORKS[right_fork].clone(), 1000) == RT_EOK {
+                        hprintln!("哲学家 {} 拿起右叉子 {}，开始进餐", philosopher_id, right_fork);
+                        
+                        // 进餐一段时间
+                        let eat_start = rt_tick_get();
+                        while rt_tick_get() - eat_start < 300 {
+                            // 进餐中...
+                        }
+                        
+                        hprintln!("哲学家 {} 进餐完成", philosopher_id);
+                        
+                        // 放下右叉子
+                        rt_sem_release(FORKS[right_fork].clone());
+                        hprintln!("哲学家 {} 放下右叉子 {}", philosopher_id, right_fork);
+                    } else {
+                        hprintln!("哲学家 {} 无法拿起右叉子 {}", philosopher_id, right_fork);
+                    }
+                    
+                    // 放下左叉子
+                    rt_sem_release(FORKS[left_fork].clone());
+                    hprintln!("哲学家 {} 放下左叉子 {}", philosopher_id, left_fork);
+                } else {
+                    hprintln!("哲学家 {} 无法拿起左叉子 {}", philosopher_id, left_fork);
+                }
+                
+                // 离开餐厅
+                rt_sem_release(ROOM.clone());
+                hprintln!("哲学家 {} 离开餐厅", philosopher_id);
+            } else {
+                hprintln!("哲学家 {} 无法进入餐厅", philosopher_id);
+            }
+            
+            // 重置计时器，继续循环
+            break;
+        }
+    }
+    rt_thread_delete(rt_thread_self().unwrap());
+}
+
+pub extern "C" fn philosopher_thread_4() -> () {
+    let philosopher_id = 4;
+    let left_fork = philosopher_id;
+    let right_fork = (philosopher_id + 1) % 5;
+    
+    hprintln!("哲学家 {} 开始思考...", philosopher_id);
+    
+    let tic = rt_tick_get();
+    let mut start_tick = rt_tick_get();
+    
+    loop {
+        // 思考一段时间
+        if rt_tick_get() - start_tick > 500 {
+            hprintln!("哲学家 {} 正在思考...", philosopher_id);
+            start_tick = rt_tick_get();
+        }
+        
+        // 每隔一段时间尝试进餐
+        if rt_tick_get() - tic > 2000 {
+            hprintln!("哲学家 {} 感到饥饿，准备进餐...", philosopher_id);
+            
+            // 进入餐厅
+            if rt_sem_take(ROOM.clone(), 1000) == RT_EOK {
+                hprintln!("哲学家 {} 进入餐厅", philosopher_id);
+                
+                // 拿起左叉子
+                if rt_sem_take(FORKS[left_fork].clone(), 1000) == RT_EOK {
+                    hprintln!("哲学家 {} 拿起左叉子 {}", philosopher_id, left_fork);
+                    
+                    // 拿起右叉子
+                    if rt_sem_take(FORKS[right_fork].clone(), 1000) == RT_EOK {
+                        hprintln!("哲学家 {} 拿起右叉子 {}，开始进餐", philosopher_id, right_fork);
+                        
+                        // 进餐一段时间
+                        let eat_start = rt_tick_get();
+                        while rt_tick_get() - eat_start < 300 {
+                            // 进餐中...
+                        }
+                        
+                        hprintln!("哲学家 {} 进餐完成", philosopher_id);
+                        
+                        // 放下右叉子
+                        rt_sem_release(FORKS[right_fork].clone());
+                        hprintln!("哲学家 {} 放下右叉子 {}", philosopher_id, right_fork);
+                    } else {
+                        hprintln!("哲学家 {} 无法拿起右叉子 {}", philosopher_id, right_fork);
+                    }
+                    
+                    // 放下左叉子
+                    rt_sem_release(FORKS[left_fork].clone());
+                    hprintln!("哲学家 {} 放下左叉子 {}", philosopher_id, left_fork);
+                } else {
+                    hprintln!("哲学家 {} 无法拿起左叉子 {}", philosopher_id, left_fork);
+                }
+                
+                // 离开餐厅
+                rt_sem_release(ROOM.clone());
+                hprintln!("哲学家 {} 离开餐厅", philosopher_id);
+            } else {
+                hprintln!("哲学家 {} 无法进入餐厅", philosopher_id);
+            }
+            
+            // 重置计时器，继续循环
+            break;
+        }
+    }
+    rt_thread_delete(rt_thread_self().unwrap());
+}
+
+pub extern "C" fn philosopher_thread_0() -> () {
+    let philosopher_id = 0;
+    let left_fork = philosopher_id;
+    let right_fork = (philosopher_id + 1) % 5;
+    
+    hprintln!("哲学家 {} 开始思考...", philosopher_id);
+    
+    let tic = rt_tick_get();
+    let mut start_tick = rt_tick_get();
+
+    loop {
+        // 思考一段时间
+        if rt_tick_get() - start_tick > 500 {
+            hprintln!("哲学家 {} 正在思考...", philosopher_id);
+            start_tick = rt_tick_get();
+        }
+        
+        // 每隔一段时间尝试进餐
+        if rt_tick_get() - tic > 2000 {
+            hprintln!("哲学家 {} 感到饥饿，准备进餐...", philosopher_id);
+            
+            // 进入餐厅
+            if rt_sem_take(ROOM.clone(), 1000) == RT_EOK {
+                hprintln!("哲学家 {} 进入餐厅", philosopher_id);
+                
+                // 拿起左叉子
+                if rt_sem_take(FORKS[left_fork].clone(), 1000) == RT_EOK {
+                    hprintln!("哲学家 {} 拿起左叉子 {}", philosopher_id, left_fork);
+                    
+                    // 拿起右叉子
+                    if rt_sem_take(FORKS[right_fork].clone(), 1000) == RT_EOK {
+                        hprintln!("哲学家 {} 拿起右叉子 {}，开始进餐", philosopher_id, right_fork);
+                        
+                        // 进餐一段时间
+                        let eat_start = rt_tick_get();
+                        while rt_tick_get() - eat_start < 30 {
+                            // 进餐中...
+                        }
+                        
+                        hprintln!("哲学家 {} 进餐完成", philosopher_id);
+                        
+                        // 放下右叉子
+                        rt_sem_release(FORKS[right_fork].clone());
+                        hprintln!("哲学家 {} 放下右叉子 {}", philosopher_id, right_fork);
+                    } else {
+                        hprintln!("哲学家 {} 无法拿起右叉子 {}", philosopher_id, right_fork);
+                    }
+                    
+                    // 放下左叉子
+                    rt_sem_release(FORKS[left_fork].clone());
+                    hprintln!("哲学家 {} 放下左叉子 {}", philosopher_id, left_fork);
+                } else {
+                    hprintln!("哲学家 {} 无法拿起左叉子 {}", philosopher_id, left_fork);
+                }
+                
+                // 离开餐厅
+                rt_sem_release(ROOM.clone());
+                hprintln!("哲学家 {} 离开餐厅", philosopher_id);
+            } else {
+                hprintln!("哲学家 {} 无法进入餐厅", philosopher_id);
+            }
+            
+            // 重置计时器，继续循环
+            break;
+        }
+    }
+    rt_thread_delete(rt_thread_self().unwrap());
+}
+
+/// 运行哲学家进餐问题测试
+pub fn run_dining_philosophers_test() {
+    hprintln!("开始哲学家进餐问题测试...");
+    
+    // 创建5个哲学家线程，传递不同的参数
+    let philosophers = [
+        rt_thread_create("philosopher_0", philosopher_thread_0 as usize, 2*1024, 10, 20),
+        rt_thread_create("philosopher_1", philosopher_thread_1 as usize, 2*1024, 10, 20),
+        rt_thread_create("philosopher_2", philosopher_thread_2 as usize, 2*1024, 10, 20),
+        rt_thread_create("philosopher_3", philosopher_thread_3 as usize, 2*1024, 10, 20),
+        rt_thread_create("philosopher_4", philosopher_thread_4 as usize, 2*1024, 10, 20),
+    ];
+    
+    // 禁用中断并启动所有哲学家线程
+    let level = rt_hw_interrupt_disable();
+    
+    for (i, philosopher) in philosophers.iter().enumerate() {
+        hprintln!("启动哲学家 {}: {:?}", i, philosopher);
+        rt_thread_startup(philosopher.clone());
+    }
+    
+    // 重新启用中断
+    rt_hw_interrupt_enable(level);
+    
+    hprintln!("哲学家进餐问题测试已启动");
+}
+
+
+/// 测试信号量基本功能
+pub fn test_semaphore_basic() {
+    hprintln!("测试信号量基本功能...");
+    
+    // 创建一个初始值为2的信号量
+    let sem = Arc::new(Semaphore {
+        parent: unsafe { RTIntrFreeCell::new(rt_ipc_init("test_sem", 1)) },
+        count: Mutex::new(2),
+    });
+    
+    hprintln!("信号量初始值: {}", *sem.count.lock());
+    
+    // 测试获取信号量
+    if rt_sem_take(sem.clone(), 1000) == RT_EOK {
+        hprintln!("成功获取信号量，当前值: {}", *sem.count.lock());
+    } else {
+        hprintln!("获取信号量失败");
+    }
+    
+    if rt_sem_take(sem.clone(), 1000) == RT_EOK {
+        hprintln!("成功获取信号量，当前值: {}", *sem.count.lock());
+    } else {
+        hprintln!("获取信号量失败");
+    }
+    
+    // 尝试获取第三个信号量（应该失败）
+    // if rt_sem_take(sem.clone(), 100) == RT_EOK {
+    //     hprintln!("意外成功获取信号量");
+    // } else {
+    //     hprintln!("正确：无法获取更多信号量");
+    // }
+    
+    // 释放信号量
+    rt_sem_release(sem.clone());
+    hprintln!("释放信号量，当前值: {}", *sem.count.lock());
+    
+    rt_sem_release(sem.clone());
+    hprintln!("释放信号量，当前值: {}", *sem.count.lock());
+    
+    hprintln!("信号量基本功能测试完成");
 }

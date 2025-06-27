@@ -18,7 +18,7 @@ use cortex_m::asm;
 pub extern "C" fn main_entry(arg: usize) -> () {
     hprintln!("main_entry...");
     // example::run_example();
-    test_ipc::run_ipc_test();
+    test_ipc::run_dining_philosophers_test();
     // performance_test::run_performance_test();
     // 用户主线程入口
     loop{

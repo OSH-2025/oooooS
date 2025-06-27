@@ -186,16 +186,30 @@ pub fn rt_sem_take(sem: Arc<Semaphore>, timeout: usize) -> RtErrT {
             let thread = rt_thread_self().unwrap();
             thread.inner.exclusive_access().error = RT_ERROR;
             rt_ipc_list_suspend(sem.parent.exclusive_session(|ipc| ipc.clone()), thread.clone());
+            hprintln!("rt_sem_take: {:?}", thread);
+            hprintln!("进入计时，挂起");
             if timeout > 0 {
                 let mut time = timeout as u32;
-                thread.inner.exclusive_session(|inner| {
-                    if let Some(timer) = &inner.timer {
-                        rt_timer_control(timer, TimerControlCmd::SetTime(time));
-                        rt_timer_start(timer.clone());
-                    }
-                });
+                // 创建单次定时器（不是周期定时器）
+                let timer = Arc::new(Mutex::new(RtTimer::new(
+                    "rt_sem_take",
+                    0,
+                    0x0,  // 单次定时器，不是周期定时器
+                    Some(Box::new(move || {
+                        hprintln!("计时结束");
+                    })),
+                    timeout as u32,
+                    timeout as u32,
+                )));
+
+                hprintln!("计时即将开始");
+                // 启动定时器
+                timer::rt_timer_start(timer.clone());
+                hprintln!("计时开始");
             }
             rt_hw_interrupt_enable(level);
+            hprintln!("rt_sem_take: {:?}", thread);
+            hprintln!("正在计时");
             rt_schedule();
             if thread.inner.exclusive_access().error != RT_EOK {
                 return thread.inner.exclusive_access().error;
@@ -219,6 +233,18 @@ pub fn rt_sem_release(sem: Arc<Semaphore>) -> RtErrT {
             need_schedule = true;
         }
     }
+    else {
+        if *sem.count.lock() < 0x10000u32 {
+            *sem.count.lock() += 1;
+        }
+        else {
+            rt_hw_interrupt_enable(level);
+            return RT_EFULL;
+        }
+    }
     rt_hw_interrupt_enable(level);
+    if need_schedule {
+        rt_schedule();
+    }
     RT_EOK
 }

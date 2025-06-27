@@ -254,7 +254,7 @@ pub fn rt_thread_startup(thread: Arc<RtThread>) -> RtErrT {
 /// @return RT_EOK: 挂起成功
 ///         RT_ERROR: 挂起失败
 pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
-    hprintln!("rt_thread_suspend: {:?}", thread);
+    // hprintln!("rt_thread_suspend: {:?}", thread);
     let stat = thread.inner.exclusive_access().stat.get_stat();
     if (stat != (ThreadState::Ready as u8)) && (stat != (ThreadState::Running as u8)) {
         return RT_ERROR;
