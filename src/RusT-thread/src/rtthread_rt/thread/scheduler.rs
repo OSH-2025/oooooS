@@ -16,6 +16,7 @@ use crate::rtthread_rt::rtconfig::*;
 use crate::rtthread_rt::rtdef::ThreadState;
 use crate::rtthread_rt::hardware::*;
 use crate::rtthread_rt::thread::*;
+use crate::rtthread_rt::timer::rt_tick_get;
 
 
 lazy_static! {
@@ -77,6 +78,7 @@ fn switch_to_thread(thread: Arc<RtThread>) {
 fn switch_to_thread_from_to(from_thread: Arc<RtThread>, to_thread: Arc<RtThread>) {
     let from_stack_pointer = from_thread.inner.field_mut_ptr(|thread| &mut thread.stack_pointer);
     let to_stack_pointer = to_thread.inner.field_mut_ptr(|thread| &mut thread.stack_pointer);
+    // hprintln!("switch_to_thread_from_to: from_stack_pointer: {:?}, to_stack_pointer: {:?}", from_stack_pointer, to_stack_pointer);
     rt_hw_context_switch(from_stack_pointer, to_stack_pointer);
 }
 
@@ -91,11 +93,18 @@ struct ThreadSwitchContext {
 
 /// 准备线程切换
 fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
+    // hprintln!("prepare_thread_switch: at tick: {}", rt_tick_get());
     let mut scheduler = RT_SCHEDULER.exclusive_access();
 
     // 使用调度策略选择下一个线程
-    let (to_thread, need_insert_from_thread) = scheduler.get_scheduling_policy()
-        .select_next_thread(&scheduler.current_thread)?;
+    let select_result = scheduler.get_scheduling_policy()
+        .select_next_thread(&scheduler.current_thread);
+    if select_result.is_none() {
+        hprintln!("prepare_thread_switch: select_result is none");
+        scheduler.current_thread.clone().unwrap().inner.exclusive_access().stat = ThreadState::Running;
+        return None;
+    }
+    let (to_thread, need_insert_from_thread) = select_result.unwrap();
     // hprintln!("prepare_thread_switch: to_thread: {:?}", to_thread);
     // ----------------------------检查是否需要切换线程以及准备工作（更新当前线程）----------------------------
     if to_thread != scheduler.current_thread.clone().unwrap() {// 需要切换线程
@@ -138,13 +147,14 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
         }
     }
     // if let Some(from) = &from_thread {
-    //     hprintln!("execute_thread_switch: from_thread: {:?} to_thread: {:?}", from, to_thread);
+        // hprintln!("execute_thread_switch: from_thread: {:?} to_thread: {:?}", from, to_thread);
     // }
 
 
     // 设置新线程状态为运行
     to_thread.inner.exclusive_access().stat = ThreadState::Running;
 
+    // hprintln!("execute_thread_switch: at level: {}", rt_hw_get_interrupt_level());
     // 执行线程切换
     if let Some(from) = from_thread {
         switch_to_thread_from_to(from, to_thread);
@@ -159,8 +169,10 @@ fn execute_thread_switch(context: ThreadSwitchContext) {
 /// 1. 准备线程切换（prepare_thread_switch()）
 /// 2. 执行线程切换（execute_thread_switch()）
 pub fn rt_schedule() {
+    // hprintln!("rt_schedule: at tick: {}", rt_tick_get());
     // 关中断
     let level = rt_hw_interrupt_disable();
+    // hprintln!("rt_schedule: level: {}", level);
     // 检查锁嵌套计数
     {
         let mut scheduler = RT_SCHEDULER.exclusive_access();
@@ -174,6 +186,7 @@ pub fn rt_schedule() {
     if let Some(context) = prepare_thread_switch() {
         if rt_interrupt_get_nest() == 0 {// 非中断环境：execute_thread_switch() → 开中断 → 返回
             // 在非中断环境下切换
+            // hprintln!("rt_schedule: execute_thread_switch");
             execute_thread_switch(context);
             // 开中断
             rt_hw_interrupt_enable(level);

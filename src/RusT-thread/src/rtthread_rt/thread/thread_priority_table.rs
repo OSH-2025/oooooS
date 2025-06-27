@@ -50,6 +50,9 @@ impl ThreadPriorityTable {
     
     /// 获取优先级表中优先级为priority的线程
     pub fn get_thread(&self, priority: u8) -> Option<Arc<RtThread>> {
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            return None;
+        }
         self.table[priority as usize].front().cloned()
     }
     
@@ -109,6 +112,10 @@ impl ThreadPriorityTable {
     pub fn get_ready_priority_group(&self) -> u32 {
         self.ready_priority_group
     }
+
+    pub fn empty(&self) -> bool {
+        self.ready_priority_group == 0
+    }
     
     /// 获取指定优先级的线程队列
     pub fn get_priority_queue(&self, priority: u8) -> &VecDeque<Arc<RtThread>> {
@@ -136,6 +143,7 @@ impl ThreadPriorityTable {
 
     #[cfg(feature = "tiny_ffs")]
     pub fn get_highest_priority(&self) -> u8 {
+        // hprintln!("get_highest_priority: ready_priority_group: {:08b}", self.ready_priority_group);
         __rt_ffs(self.ready_priority_group) - 1
     }
     /// 去除priority在ready_priority_group中的标记
@@ -212,6 +220,10 @@ const __LOWEST_BIT_BITMAP: [u8; 37] = [
 #[cfg(feature = "tiny_ffs")]
 /// 查找最低位设置的实现
 pub fn __rt_ffs(value: u32) -> u8 {
+    if value == 0 {
+        hprintln!("__rt_ffs: value is 0 ");
+        return 0;
+    }
     return __LOWEST_BIT_BITMAP[((value & (value - 1) ^ value) % 37) as usize];
 }
 

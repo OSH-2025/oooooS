@@ -14,6 +14,7 @@ use crate::rtthread_rt::rtconfig::*;
 use crate::rtthread_rt::rtdef::ThreadState;
 use crate::rtthread_rt::hardware::*;
 use crate::rtthread_rt::thread::*;
+use crate::rtthread_rt::timer::rt_tick_get;
 
 
 /// 调度策略trait
@@ -44,12 +45,24 @@ impl SchedulingPolicy for PrioritySchedulingPolicy {
         &self,
         current_thread: &Option<Arc<RtThread>>,
     ) -> Option<(Arc<RtThread>, bool)> {
-
+        // hprintln!("PrioritySchedulingPolicy: at tick: {}", rt_tick_get());
         // ----------------------------获取最高优先级的线程----------------------------
+
+        if RT_THREAD_PRIORITY_TABLE.exclusive_access().empty() {
+            hprintln!("Warning: PrioritySchedulingPolicy: empty");
+            return None;
+        }
         // 获取最高优先级
         let priority_of_to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_highest_priority();
-        let mut to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority_of_to_thread)?;
+        let mut to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority_of_to_thread);
+        if to_thread.is_none() {
+            hprintln!("PrioritySchedulingPolicy: to_thread is none");
+            return None;
+        }
+        let mut to_thread = to_thread.unwrap();
+        // hprintln!("PrioritySchedulingPolicy 0.5");
         let thread_stat = to_thread.inner.exclusive_access().stat.get_stat();
+        // hprintln!("PrioritySchedulingPolicy 1");
         if thread_stat != (ThreadState::Ready as u8) {
             hprintln!("Warning: Found non-Ready thread in priority table. Thread state: {}, removing from table.", thread_stat);
             // 移除状态不正确的线程
@@ -57,7 +70,8 @@ impl SchedulingPolicy for PrioritySchedulingPolicy {
             // 重新获取下一个线程
             to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority_of_to_thread)?;
         }
-        
+        // hprintln!("PrioritySchedulingPolicy 2");
+
         // 是否需要将原线程重新插入就绪队列：true表示需要，false表示不需要
         let mut need_insert_from_thread = false;
 
@@ -88,7 +102,7 @@ impl SchedulingPolicy for PrioritySchedulingPolicy {
         else {
             hprintln!("Warning: current_thread is None ! ! !");
         }
-
+        // hprintln!("PrioritySchedulingPolicy 3");
         Some((to_thread, need_insert_from_thread))
     }
 

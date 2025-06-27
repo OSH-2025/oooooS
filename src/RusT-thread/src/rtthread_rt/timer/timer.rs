@@ -15,6 +15,7 @@ use alloc::sync::Arc;
 use spin::Mutex;
 use cortex_m::peripheral::syst::SystClkSource;
 use core::fmt::{self, Display};
+use cortex_m_semihosting::hprintln;
 
 //由于rust中可以使用高级容器：动态数组，所以不需要使用链表（跳表）算法来加速
 //定时器的查找，而可以使用二分查找，所以我们决定把定时器存放在动态数组中
@@ -142,6 +143,20 @@ pub fn rt_timer_start(timer: TimerHandle) {
             timers.insert(pos, timer);// 将定时器插入到timers数组中
         }
     }
+    
+    // hprintln!("rt_timer_start at tick: {}", rt_tick_get());
+    // // 打印定时器内容
+    // unsafe {
+    //     if let Some(ref timers_mutex) = TIMERS {
+    //         let timers = timers_mutex.lock();
+    //         for timer in timers.iter() {
+    //             let timer_locked = timer.lock();
+    //             hprintln!("timer: {}", *timer_locked);
+    //             drop(timer_locked);
+    //         }
+    //     }
+    // }
+    
     rt_hw_interrupt_enable(level);
 }
 
@@ -228,6 +243,19 @@ pub fn rt_timer_control(timer: &TimerHandle, cmd: TimerControlCmd) {
 
 /// 检查所有定时器，处理超时事件
 pub fn rt_timer_check() { 
+    // if rt_tick_get() % 1000 == 0 {
+    //     hprintln!("rt_timer_check at tick: {}", rt_tick_get());
+    //     unsafe {
+    //         if let Some(ref timers_mutex) = TIMERS {
+    //             let timers = timers_mutex.lock();
+    //             for timer in timers.iter() {
+    //                 let timer_locked = timer.lock();
+    //                 hprintln!("timer: {}", *timer_locked);
+    //                 drop(timer_locked);
+    //             }
+    //         }
+    //     }
+    // }
     let mut expired_timers: Vec<TimerHandle> = Vec::new();
     let level = rt_hw_interrupt_disable();
     let current_tick = rt_tick_get();
@@ -252,6 +280,7 @@ pub fn rt_timer_check() {
             
             // 只移除已过期的定时器
             if expired_count > 0 {
+                // hprintln!("expired_count: {}", &expired_count);
                 expired_timers = timers.drain(0..expired_count).collect();
             }
         }
@@ -295,7 +324,7 @@ pub fn rt_system_timer_init(mut syst: cortex_m::peripheral::SYST, clocks: &stm32
     // Configure SysTick
     syst.set_reload(reload_value);
     syst.enable_counter();
-    syst.enable_interrupt();
+    syst.enable_interrupt();// 使能SysTick中断
     // Use the core clock as SysTick source
     syst.set_clock_source(SystClkSource::Core);
 }

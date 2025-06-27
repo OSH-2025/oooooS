@@ -55,6 +55,12 @@ pub fn rt_hw_interrupt_enable(level: u32) {
     }
 }
 
+pub fn rt_hw_get_interrupt_level() -> u32 {
+    let level = rt_hw_interrupt_disable();
+    rt_hw_interrupt_enable(level);
+    level
+}
+
 /// 设置中断进入钩子函数。
 /// 仅在启用 feature = "hook" 时可用。
 /// 调用后，每次进入中断时会自动调用 hook。

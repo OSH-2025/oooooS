@@ -8,9 +8,10 @@
 //! 用户主线程的入口函数必须以pub extern "C" 声明，参数是usize类型
 
 use crate::test::example_mfq;
-// use crate::test::example;
+use crate::test::example;
 use crate::test::performance_test;
-use crate::rtthread_rt::thread::rt_thread_yield;
+use crate::rtthread_rt::thread::{rt_thread_yield, rt_thread_sleep, rt_thread_self};
+use crate::rtthread_rt::hardware::rt_hw_get_interrupt_level;
 
 use cortex_m_semihosting::hprintln;
 use cortex_m::asm;

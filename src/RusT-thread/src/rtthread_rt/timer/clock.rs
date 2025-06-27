@@ -36,6 +36,9 @@ pub fn rt_tick_set(tick: u32) {
 /// 时钟中断处理函数
 pub fn rt_tick_increase() {
 
+    // hprintln!("rt_tick_increase at tick: {}", rt_tick_get());
+
+
     let level = rt_hw_interrupt_disable();
     *RT_TICK.exclusive_access() +=1 ;
 
