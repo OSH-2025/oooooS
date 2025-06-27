@@ -1,98 +1,120 @@
-use std::collections::LinkedList;
-use crate::rtdef::{RtErrT, RT_EOK, RT_ERROR, RT_ETIMEOUT, RT_IPC_FLAG_FIFO, RT_IPC_FLAG_PRIO};
+//! ipc 模块
+//! 
+//! 本模块实现了RT-Thread的IPC机制
+//! 包括消息队列、信号量、互斥锁、事件等
+//! 出于实时性考虑，这里目前只实现 PRIO 模式（优先级模式），不去实现 FIFO 模式（先进先出模式）
+//! 结构体：
+//! 
+//! 函数：
+//! 
 
-pub struct Object {
-    pub name: String,
+use lazy_static::lazy_static;
+
+extern crate alloc;
+use alloc::vec::Vec;
+use spin::Mutex;
+use alloc::boxed::Box;
+
+use crate::rtthread_rt::rtdef::*;
+use crate::rtthread_rt::kservice::RTIntrFreeCell;
+use crate::rtthread_rt::rtconfig::*;
+use crate::rtthread_rt::thread::*;
+
+use core::fmt::Debug;
+use alloc::sync::Arc;
+use alloc::alloc::{
+    alloc,
+    dealloc,
+    Layout,
+};
+use cortex_m_semihosting::hprintln;
+
+/// 基础 IPC 结构体
+pub struct IPCBase {
+    /// rt_object 结构体
+    pub name: [u8; RT_NAME_MAX],
     pub object_type: u8,
-    pub flag: u8,
+
+    /// 线程队列
+    pub thread_queue: RTIntrFreeCell<Vec<Arc<RtThread>>>,
 }
 
-/// IPC 对象结构体
-pub struct IpcObject {
-    /// 继承自基础对象
-    pub parent: Object,
-    /// 等待在此资源上的线程列表
-    pub suspend_thread: LinkedList<usize>,  // 使用线程ID作为标识
+/// semaphore 结构体
+pub struct Semaphore {
+    /// 基础 IPC 结构体
+    pub parent: IPCBase,
+
+    /// 信号量计数
+    pub count: u32,
+
+    /// 保留字段，用于扩展
+    pub reserved: u32,
 }
 
-impl IpcObject {
-    /// 创建一个新的 IPC 对象
-    pub fn new() -> Self {
-        Self {
-            parent: Object {
-                name: String::new(),
-                object_type: 0,
-                flag: RT_IPC_FLAG_FIFO,
-            },
-            suspend_thread: LinkedList::new(),
-        }
-    }
+/// 初始化 IPC 结构体
+/// @param name 名称
+/// @param object_type 对象类型
+/// @return IPC 结构体
+pub fn rt_ipc_init(name: &str, object_type: u8) -> Arc<IPCBase> {
+    let name_bytes = name.as_bytes();
+    let len = name_bytes.len().min(RT_NAME_MAX);
+    let mut name_array = [0u8; RT_NAME_MAX];
+    name_array[..len].copy_from_slice(&name_bytes[..len]);
+    Arc::new(IPCBase {
+        name: name_array,
+        object_type,
+        thread_queue: unsafe { RTIntrFreeCell::new(Vec::new()) },
+    })
+}
 
-    /// 初始化 IPC 对象
-    pub fn init(&mut self) -> RtErrT {
-        // 初始化挂起线程列表
-        self.suspend_thread.clear();
-        RT_EOK
-    }
+/// 将线程挂起，并按优先级插入线程队列
+/// @param ipc IPC 结构体
+/// @param thread 线程
+pub fn rt_ipc_list_suspend(ipc: Arc<IPCBase>, thread: Arc<RtThread>) {
+    rt_thread_suspend(thread.clone());
 
-    /// 将线程挂起到 IPC 对象的等待列表中
-    pub fn suspend_thread(&mut self, thread_id: usize, flag: u8) -> RtErrT {
-        match flag {
-            RT_IPC_FLAG_FIFO => {
-                // FIFO 模式：直接添加到列表末尾
-                self.suspend_thread.push_back(thread_id);
-            },
-            RT_IPC_FLAG_PRIO => {
-                // PRIO 模式：根据优先级插入
-                // 注意：这里简化处理，实际应该根据线程优先级排序
-                self.suspend_thread.push_back(thread_id);
-            },
-            _ => {
-                return RT_ERROR;
+    // todo 这里不知道能不能正确运行
+    ipc.thread_queue.exclusive_session(|queue| {
+        for i in 0..queue.len() {
+            // 按优先级插入队列
+            if queue[i].inner.field_ptr(|thread| &thread.current_priority) > thread.inner.field_ptr(|thread| &thread.current_priority) {
+                queue.insert(i, thread.clone());
+                return;
             }
         }
-        RT_EOK
-    }
 
-    /// 恢复等待列表中的第一个线程
-    pub fn resume_thread(&mut self) -> RtErrT {
-        if let Some(thread_id) = self.suspend_thread.pop_front() {
-            // 这里应该调用线程恢复函数
-            // 简化处理，实际应该调用 rt_thread_resume
-            RT_EOK
+        // 若优先级最低，则插入队列末尾
+        queue.push(thread);
+    });
+}
+
+/// 将线程唤醒
+/// @param ipc IPC 结构体
+/// @param thread 线程
+pub fn rt_ipc_list_resume(ipc: Arc<IPCBase>) -> Option<Arc<RtThread>> {
+    // 取出队列第一个线程
+    ipc.thread_queue.exclusive_session(|queue| {
+        if queue.is_empty() {
+            None
         } else {
-            RT_ERROR
+            let thread = queue.remove(0);
+            rt_thread_resume(thread.clone());
+            Some(thread)
         }
-    }
+    })
+}
 
-    /// 恢复所有等待的线程
-    pub fn resume_all_threads(&mut self) -> RtErrT {
-        while !self.suspend_thread.is_empty() {
-            if let Some(thread_id) = self.suspend_thread.pop_front() {
-                // 这里应该调用线程恢复函数
-                // 简化处理，实际应该调用 rt_thread_resume
-            }
+/// 将所有线程唤醒
+/// @param ipc IPC 结构体
+/// @param thread 线程
+pub fn rt_ipc_list_resume_all(ipc: Arc<IPCBase>) {
+    ipc.thread_queue.exclusive_session(|queue| {
+        // 唤醒所有线程
+        for thread in queue.iter() {
+            rt_thread_resume(thread.clone());
         }
-        RT_EOK
-    }
+        // 清空队列
+        queue.clear();
+    });
 }
 
-/// IPC 对象初始化函数
-pub fn ipc_object_init(ipc: &mut IpcObject) -> RtErrT {
-    ipc.init()
-}
-
-/// 将线程挂起到 IPC 对象的等待列表中
-pub fn ipc_list_suspend(ipc: &mut IpcObject, thread_id: usize, flag: u8) -> RtErrT {
-    ipc.suspend_thread(thread_id, flag)
-}
-
-/// 恢复等待列表中的第一个线程
-pub fn ipc_list_resume(ipc: &mut IpcObject) -> RtErrT {
-    ipc.resume_thread()
-}
-
-/// 恢复所有等待的线程
-pub fn ipc_list_resume_all(ipc: &mut IpcObject) -> RtErrT {
-    ipc.resume_all_threads()
-}

@@ -9,6 +9,7 @@
 
 use crate::test::example;
 use crate::test::performance_test;
+use crate::test::test_ipc;
 
 use cortex_m_semihosting::hprintln;
 use cortex_m::asm;
@@ -16,7 +17,8 @@ use cortex_m::asm;
 // 用户主线程入口
 pub extern "C" fn main_entry(arg: usize) -> () {
     hprintln!("main_entry...");
-    example::run_example();
+    // example::run_example();
+    test_ipc::run_ipc_test();
     // performance_test::run_performance_test();
     // 用户主线程入口
     loop{
