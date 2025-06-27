@@ -73,6 +73,11 @@ pub fn rt_tick_to_ms(tick: u32) -> u32 {
     (tick * 1000) / RT_TICK_PER_SECOND
 }
 
+///
+// pub fn rt_tick_to_ms(tick: u32) -> f32 {
+//     (tick as f32 * 1000 as f32) / RT_TICK_PER_SECOND as f32
+// }
+
 /// 获取自启动以来经过的毫秒数
 pub fn rt_tick_get_millisecond() -> u32 {
     if 1000 % RT_TICK_PER_SECOND == 0 {

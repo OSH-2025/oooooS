@@ -8,6 +8,7 @@ use crate::rtthread_rt::hardware::*;
 use cortex_m_semihosting::hprintln;
 
 extern crate alloc;
+use core::str;
 use alloc::vec::Vec;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -82,6 +83,7 @@ lazy_static! {
     static ref COMPLETED_EVENTS: RTIntrFreeCell<Vec<Event>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
     static ref EVENT_COUNTER: AtomicU32 = AtomicU32::new(0);
     static ref COMPLETED_COUNTER: AtomicU32 = AtomicU32::new(0);
+    static ref RT_THREAD_LIST: RTIntrFreeCell<Vec<Arc<RtThread>>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
 }
 
 // 目标生成事件数
@@ -106,9 +108,7 @@ pub extern "C" fn event_generator_entry(arg: usize) -> () {
             hprintln!("生成事件 #{} 优先级: {}", event_id, priority);
             
             // 将事件添加到队列
-            let level = rt_hw_interrupt_disable();
             EVENT_QUEUE.exclusive_access().push(event);
-            rt_hw_interrupt_enable(level);
         }
     }
     
@@ -150,6 +150,9 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
+        // else {
+        //     rt_thread_sleep(rt_thread_self().unwrap(), 10);
+        // }
     }
     
     hprintln!("高优先级处理器停止");
@@ -189,6 +192,9 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
+        // else {
+        //     rt_thread_sleep(rt_thread_self().unwrap(), 50);
+        // }
     }
     
     hprintln!("中优先级处理器停止");
@@ -229,6 +235,9 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
+        // else {
+        //     rt_thread_sleep(rt_thread_self().unwrap(), 100);
+        // }
     }
     
     hprintln!("低优先级处理器停止");
@@ -244,8 +253,9 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
         rt_thread_sleep(rt_thread_self().unwrap(), 100);
     }
     
-    // 再等待一段时间，确保所有处理线程都已退出
-    rt_thread_sleep(rt_thread_self().unwrap(), 200);
+    hprintln!("OK");
+    // // 再等待一段时间，确保所有处理线程都已退出
+    // rt_thread_sleep(rt_thread_self().unwrap(), 200);
     
     // 分析结果
     let events = COMPLETED_EVENTS.exclusive_access();
@@ -320,214 +330,6 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     hprintln!("测试完成");
 }
 
-/// 用于测试线程切换时间的测试线程入口函数
-pub extern "C" fn thread_switch_test_entry(arg: usize) -> () {
-    let thread_id = arg;
-    let mut switch_times = Vec::new();
-    let mut is_ready = false;
-    
-    // 每个线程执行SWITCH_TEST_COUNT次切换测试
-    const SWITCH_TEST_COUNT: usize = 50;
-    
-    hprintln!("线程 {} 已启动", thread_id);
-    
-    for i in 0..SWITCH_TEST_COUNT {
-        if !is_ready {
-            // 第一次运行时进行同步
-            is_ready = true;
-            rt_thread_yield();
-            continue;
-        }
-        
-        // 记录切换前的时间
-        let start_tick = rt_tick_get();
-        
-        // 主动让出CPU
-        rt_thread_yield();
-        
-        // 记录切换后的时间
-        let end_tick = rt_tick_get();
-        
-        // 计算切换时间
-        let switch_time = end_tick - start_tick;
-        switch_times.push(switch_time);
-        
-        hprintln!("线程 {} 第 {} 次切换时间: {} tick ({} ms)", 
-                 thread_id, i, switch_time, rt_tick_to_ms(switch_time));
-    }
-    
-    // 计算平均切换时间
-    if !switch_times.is_empty() {
-        let total_time: u32 = switch_times.iter().sum();
-        let avg_time = total_time as f32 / switch_times.len() as f32;
-        let avg_time_ms = rt_tick_to_ms(total_time) as f32 / switch_times.len() as f32;
-        
-        // 计算最小、最大切换时间
-        let min_time = *switch_times.iter().min().unwrap();
-        let max_time = *switch_times.iter().max().unwrap();
-        
-        hprintln!("线程 {} 切换统计:", thread_id);
-        hprintln!("  平均: {:.2} tick ({:.2} ms)", avg_time, avg_time_ms);
-        hprintln!("  最小: {} tick ({} ms)", min_time, rt_tick_to_ms(min_time));
-        hprintln!("  最大: {} tick ({} ms)", max_time, rt_tick_to_ms(max_time));
-    }
-    
-    rt_thread_delete(rt_thread_self().unwrap());
-}
-
-/// 测试不同优先级线程之间的切换时间
-pub extern "C" fn priority_switch_test_entry(arg: usize) -> () {
-    let thread_id = arg;
-    let priority = if thread_id == 1 { 9 } else { 10 }; // 线程1优先级高于线程2
-    let mut switch_times = Vec::new();
-    
-    // 每个线程执行SWITCH_TEST_COUNT次切换测试
-    const SWITCH_TEST_COUNT: usize = 20;
-    
-    if thread_id == 1 { // 高优先级线程
-        hprintln!("高优先级线程(ID:{})已启动", thread_id);
-        
-        // 先让低优先级线程运行
-        rt_thread_sleep(rt_thread_self().unwrap(), 10);
-        
-        for i in 0..SWITCH_TEST_COUNT {
-            // 记录切换前的时间
-            let start_tick = rt_tick_get();
-            
-            // 恢复线程2执行
-            if let Some(thread2) = RT_THREAD_LIST.exclusive_access().iter().find(|t| {
-                let name_str = core::str::from_utf8(&t.name)
-                    .unwrap_or("invalid utf8")
-                    .trim_end_matches('\0');
-                name_str == "switch2"
-            }).cloned() {
-                rt_thread_resume(thread2);
-            }
-            
-            // 自己主动挂起
-            rt_thread_suspend(rt_thread_self().unwrap());
-            
-            // 记录切换后的时间
-            let end_tick = rt_tick_get();
-            
-            // 计算切换时间
-            let switch_time = end_tick - start_tick;
-            switch_times.push(switch_time);
-            
-            hprintln!("高优先级→低优先级 第 {} 次切换时间: {} tick ({} ms)", 
-                     i, switch_time, rt_tick_to_ms(switch_time));
-        }
-    } else { // 低优先级线程
-        hprintln!("低优先级线程(ID:{})已启动", thread_id);
-        
-        for i in 0..SWITCH_TEST_COUNT {
-            // 恢复线程1执行
-            if let Some(thread1) = RT_THREAD_LIST.exclusive_access().iter().find(|t| {
-                let name_str = core::str::from_utf8(&t.name)
-                    .unwrap_or("invalid utf8")
-                    .trim_end_matches('\0');
-                name_str == "switch1"
-            }).cloned() {
-                rt_thread_resume(thread1);
-            }
-            
-            // 自己主动挂起
-            rt_thread_suspend(rt_thread_self().unwrap());
-        }
-    }
-    
-    // 计算平均切换时间
-    if !switch_times.is_empty() {
-        let total_time: u32 = switch_times.iter().sum();
-        let avg_time = total_time as f32 / switch_times.len() as f32;
-        let avg_time_ms = rt_tick_to_ms(total_time) as f32 / switch_times.len() as f32;
-        
-        // 计算最小、最大切换时间
-        let min_time = *switch_times.iter().min().unwrap();
-        let max_time = *switch_times.iter().max().unwrap();
-        
-        hprintln!("优先级切换统计:");
-        hprintln!("  平均: {:.2} tick ({:.2} ms)", avg_time, avg_time_ms);
-        hprintln!("  最小: {} tick ({} ms)", min_time, rt_tick_to_ms(min_time));
-        hprintln!("  最大: {} tick ({} ms)", max_time, rt_tick_to_ms(max_time));
-    }
-    
-    rt_thread_delete(rt_thread_self().unwrap());
-}
-
-/// 测试线程切换时间
-pub fn test_thread_switch_time() {
-    hprintln!("开始测试线程切换时间...");
-    
-    // 1. 测试相同优先级线程之间的时间片轮转切换
-    hprintln!("测试一: 相同优先级线程时间片轮转切换");
-    {
-        // 创建测试线程
-        const THREAD_COUNT: usize = 2;
-        let mut threads = Vec::new();
-        
-        for i in 0..THREAD_COUNT {
-            let name = match i {
-                0 => "switch1",
-                1 => "switch2",
-                _ => "switchN",
-            };
-            
-            let thread = rt_thread_create(
-                name,
-                thread_switch_test_entry as usize,
-                2*1024,
-                10,  // 相同优先级，线程会按照时间片轮转调度
-                5,   // 小时间片，更容易观察切换
-            );
-            
-            threads.push(thread);
-        }
-        
-        // 启动所有测试线程
-        let level = rt_hw_interrupt_disable();
-        for (i, thread) in threads.iter().enumerate() {
-            rt_thread_startup(thread.clone());
-        }
-        rt_hw_interrupt_enable(level);
-        
-        // 等待测试完成
-        rt_thread_sleep(rt_thread_self().unwrap(), 1000);
-    }
-    
-    // 2. 测试不同优先级线程之间的抢占式切换
-    hprintln!("\n测试二: 不同优先级线程抢占式切换");
-    {
-        // 创建高低优先级线程
-        let thread1 = rt_thread_create(
-            "switch1",
-            priority_switch_test_entry as usize,
-            2*1024,
-            9,  // 高优先级
-            100
-        );
-        
-        let thread2 = rt_thread_create(
-            "switch2",
-            priority_switch_test_entry as usize,
-            2*1024,
-            10, // 低优先级
-            100
-        );
-        
-        // 先启动低优先级线程
-        rt_thread_startup(thread2);
-        
-        // 然后启动高优先级线程
-        rt_thread_startup(thread1);
-        
-        // 等待测试完成
-        rt_thread_sleep(rt_thread_self().unwrap(), 1000);
-    }
-    
-    hprintln!("线程切换时间测试完成");
-}
-
 /// 运行性能测试
 pub fn run_performance_test() {
     hprintln!("开始响应时间测试...");
@@ -543,8 +345,8 @@ pub fn run_performance_test() {
         "event_gen", 
         event_generator_entry as usize, 
         2*1024, 
-        10, 
-        100
+        15, 
+        50
     );
     
     // 创建高优先级处理器线程
@@ -561,7 +363,7 @@ pub fn run_performance_test() {
         "med_proc", 
         medium_priority_processor_entry as usize, 
         2*1024, 
-        10, 
+        15, 
         100
     );
     
@@ -570,7 +372,7 @@ pub fn run_performance_test() {
         "low_proc", 
         low_priority_processor_entry as usize, 
         2*1024, 
-        10, 
+        20, 
         100
     );
     
@@ -579,13 +381,14 @@ pub fn run_performance_test() {
         "analyzer", 
         result_analyzer_entry as usize, 
         2*1024, 
-        15, 
+        25, 
         100
     );
     
     // 启动所有线程
     hprintln!("性能测试线程已启动");
     let level = rt_hw_interrupt_disable();
+    set_mfq_scheduling();
     rt_thread_startup(generator);
     rt_thread_startup(high_processor);
     rt_thread_startup(medium_processor);

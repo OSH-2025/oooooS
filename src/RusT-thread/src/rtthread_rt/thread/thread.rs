@@ -124,6 +124,16 @@ impl Debug for RtThread {
     }
 }
 
+impl RtThread {
+    /// 线程名
+    /// 使用方法：hprint!("{}", XX.thread_name);
+    pub fn thread_name(&self) -> &str {
+        let name_str = core::str::from_utf8(&self.name)
+            .unwrap_or("invalid utf8")
+            .trim_end_matches('\0');
+        name_str
+    }
+}
 
 /// 上下文，用于线程切换
 #[derive(Debug)]
@@ -312,7 +322,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
     // 创建睡眠定时器回调
     let thread_clone = thread.clone();
     let timer_callback = move || {
-        hprintln!("timer_callback: resume thread");
+        hprintln!("timer_callback: resume {}", thread_clone.clone().thread_name());
         // 在定时器回调中恢复线程
         rt_thread_resume(thread_clone.clone());
     };
@@ -420,7 +430,7 @@ pub fn rt_thread_yield() -> RtErrT {
 /// @return RT_EOK: 设置优先级成功
 ///         RT_ERROR: 设置优先级失败
 pub fn rt_thread_set_priority(thread: Arc<RtThread>,mut priority: u8) -> RtErrT {
-    hprintln!("rt_thread_set_priority: {:?} to {}", thread, priority);
+    // hprintln!("rt_thread_set_priority: {:?} to {}", thread, priority);
     if priority > RT_THREAD_PRIORITY_MAX - 1 {// 饱和处理
         priority = RT_THREAD_PRIORITY_MAX - 1;
     }
