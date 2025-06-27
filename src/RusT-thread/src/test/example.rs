@@ -7,6 +7,7 @@ use crate::rtthread_rt::timer::*;
 use crate::rtthread_rt::hardware::*;
 use cortex_m_semihosting::hprintln;
 
+/// 测试线程挂起与删除
 pub extern "C" fn example_thread_1(arg: usize) -> () {
     hprintln!("example_thread_1...");
     let tic = rt_tick_get();
@@ -24,6 +25,7 @@ pub extern "C" fn example_thread_1(arg: usize) -> () {
     }
 }
 
+/// 测试线程优先级变化 + 睡眠
 pub extern "C" fn example_thread_2(arg: usize) -> () {
     hprintln!("example_thread_2...");
     let tic = rt_tick_get();
@@ -35,7 +37,7 @@ pub extern "C" fn example_thread_2(arg: usize) -> () {
             hprintln!("example_thread_2...");
             start_tick = rt_tick_get();
         }
-        if rt_tick_get() - tic > 10000 {
+        if rt_tick_get() - tic > 20000 {
             // rt_thread_suspend(rt_thread_self().unwrap());
             if rt_thread_self().unwrap().inner.exclusive_access().current_priority == 10 {
                 rt_thread_set_priority(rt_thread_self().unwrap(), 14);
@@ -44,6 +46,7 @@ pub extern "C" fn example_thread_2(arg: usize) -> () {
     }
 }
 
+/// 测试线程优先级变化
 pub extern "C" fn example_thread_3(arg: usize) -> () {
     hprintln!("example_thread_3...");
     let tic = rt_tick_get();
@@ -54,7 +57,7 @@ pub extern "C" fn example_thread_3(arg: usize) -> () {
             hprintln!("example_thread_3...");
             start_tick = rt_tick_get();
         }
-        if rt_tick_get() - tic > 10000 {
+        if rt_tick_get() - tic > 20000 {
             // rt_thread_suspend(rt_thread_self().unwrap());
             if rt_thread_self().unwrap().inner.exclusive_access().current_priority == 10 {
                 rt_thread_set_priority(rt_thread_self().unwrap(), 14);
@@ -63,6 +66,7 @@ pub extern "C" fn example_thread_3(arg: usize) -> () {
     }
 }
 
+/// 一个简单的线程
 pub extern "C" fn example_thread_4(arg: usize) -> () {
     hprintln!("example_thread_4...");
     let mut start_tick = rt_tick_get();
@@ -75,6 +79,13 @@ pub extern "C" fn example_thread_4(arg: usize) -> () {
     }
 }
 
+/// 测试线程创建与启动
+/// [在抢占优先级+RR调度下]
+/// 期望现象：
+/// 1. 最开始，1、3交替运行（2睡眠，4优先级不够）
+/// 2. 之后，1被挂起，3独占CPU
+/// 3. 然后，2被唤醒，2，3交替运行（3先降低优先级，可能有一段时间2独占CPU）
+/// 4. 最后，3，4优先级降低至与4相同，2，3，4交替运行
 pub fn run_example() {
     // hprintln!("run_example...");
     let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 10, 1000);
