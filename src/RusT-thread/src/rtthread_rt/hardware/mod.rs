@@ -2,8 +2,6 @@
 //! 
 //! 定义了线程上下文切换、异常处理、中断处理、CPU相关函数
 
-// 只在非基准测试模式下编译
-#![cfg(not(feature = "bench_mode"))]
 
 pub mod context;
 pub mod cpuport;
