@@ -7,6 +7,8 @@ use core::ptr;
 extern crate alloc;
 use alloc::vec::Vec;
 use alloc::boxed::Box;
+// 只在嵌入式模式下导入heapless，因为基准测试模式下可能不兼容
+#[cfg(not(feature = "bench_mode"))]
 use lazy_static::lazy_static;
 use spin::Mutex;
 

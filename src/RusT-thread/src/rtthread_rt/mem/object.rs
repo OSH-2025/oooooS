@@ -8,7 +8,7 @@ use crate::rtthread_rt::rtconfig::RT_NAME_MAX;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::ptr;
-use crate::rtthread_rt::mem::safelist::SafeRTList;
+use super::safelist::SafeRTList;
 extern crate alloc;
 use alloc::vec::Vec;
 
@@ -107,7 +107,6 @@ pub static OBJECT_REGISTRY: ObjectRegistry = ObjectRegistry::new();
 /// 全局对象链表（静态常量初始化）
 static OBJECT_LIST: SafeRTList = SafeRTList::new();
 
-
 /// 初始化一个对象
 pub fn rt_object_init(object: *mut RTObject, obj_type: u8, name: &str) {
     unsafe {
@@ -135,3 +134,4 @@ pub fn rt_object_detach(object: *mut RTObject) {
     // 从安全链表中移除
     OBJECT_LIST.remove(object);
 }
+
