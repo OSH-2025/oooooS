@@ -9,23 +9,23 @@ if [ $# -gt 0 ]; then
   TEST_COUNT=$1
 fi
 
-# 指定正确的Cargo项目目录
-RUST_PROJECT_DIR="/home/Asukirina/OSH_2025/Project/oooooS/src/RusT-thread"
+# # 指定正确的Cargo项目目录
+# RUST_PROJECT_DIR="/src/RusT-thread"
 
-# 检查目录是否存在
-if [ ! -d "$RUST_PROJECT_DIR" ]; then
-  echo "错误: 项目目录不存在: $RUST_PROJECT_DIR"
-  exit 1
-fi
+# # 检查目录是否存在
+# if [ ! -d "$RUST_PROJECT_DIR" ]; then
+#   echo "错误: 项目目录不存在: $RUST_PROJECT_DIR"
+#   exit 1
+# fi
 
 echo "开始进行 $TEST_COUNT 次线程切换时间测试..."
 
 # 用于存储所有测试结果的数组
 declare -a RESULTS
 
-# 切换到Rust项目目录
-cd "$RUST_PROJECT_DIR"
-pwd
+# # 切换到Rust项目目录
+# cd "$RUST_PROJECT_DIR"
+
 
 # 进行多次测试
 for ((i=1; i<=$TEST_COUNT; i++)); do

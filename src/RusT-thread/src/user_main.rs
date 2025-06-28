@@ -30,4 +30,3 @@ pub extern "C" fn main_entry(arg: usize) -> () {
         asm::nop;
     }
 }
-
