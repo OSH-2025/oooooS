@@ -10,3 +10,4 @@ pub mod rtdef;
 pub mod rtconfig;
 pub mod thread;
 pub mod timer;
+pub mod ipc;
