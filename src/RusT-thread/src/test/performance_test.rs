@@ -83,7 +83,6 @@ lazy_static! {
     static ref COMPLETED_EVENTS: RTIntrFreeCell<Vec<Event>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
     static ref EVENT_COUNTER: AtomicU32 = AtomicU32::new(0);
     static ref COMPLETED_COUNTER: AtomicU32 = AtomicU32::new(0);
-    static ref RT_THREAD_LIST: RTIntrFreeCell<Vec<Arc<RtThread>>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
 }
 
 // 目标生成事件数

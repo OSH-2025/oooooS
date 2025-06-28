@@ -11,6 +11,7 @@ use crate::test::comprehensive_example;
 use crate::test::example_mfq;
 use crate::test::example;
 use crate::test::performance_test;
+use crate::test::switch_time_test;
 use crate::rtthread_rt::thread::rt_thread_yield;
 use crate::rtthread_rt::timer::rt_tick_get;
 
