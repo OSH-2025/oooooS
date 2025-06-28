@@ -50,7 +50,7 @@ pub fn test_insert_thread() {
     look_at_priority_table();
 
     // remove thread
-    remove_thread(thread1);
+    let _ = remove_thread(thread1);
 
     look_at_priority_table();
 

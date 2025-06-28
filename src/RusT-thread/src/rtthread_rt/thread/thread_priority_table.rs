@@ -61,6 +61,12 @@ impl ThreadPriorityTable {
     pub fn get_thread_index(&self, thread: Arc<RtThread>) -> Option<usize> {
         // 获取线程的优先级，这样可以只检查对应优先级的队列
         let priority = thread.inner.exclusive_access().current_priority;
+        
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            return None;
+        }
+        
         self.table[priority as usize]
             .iter()
             .position(|t| t == &thread)
@@ -68,6 +74,12 @@ impl ThreadPriorityTable {
     
     /// 从优先级表中移除优先级为priority的线程
     pub fn pop_thread(&mut self, priority: u8) -> Option<Arc<RtThread>> {
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            hprintln!("Warning: Attempting to pop thread from invalid priority: {}", priority);
+            return None;
+        }
+        
         // 若优先级表为空，则返回None
         if self.table[priority as usize].is_empty() {
             return None;
@@ -80,6 +92,18 @@ impl ThreadPriorityTable {
     }
 
     pub fn remove_thread_by_id(&mut self, priority: u8, index: usize) {
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            hprintln!("Warning: Attempting to remove thread from invalid priority: {}", priority);
+            return;
+        }
+        
+        // 检查索引是否在有效范围内
+        if index >= self.table[priority as usize].len() {
+            hprintln!("Warning: Attempting to remove thread with invalid index: {} from priority {}", index, priority);
+            return;
+        }
+        
         // hprintln!("remove_thread_by_id: priority: {}, index: {}", &priority, &index);
         self.table[priority as usize].remove(index);
         // 若优先级表为空，需更新就绪优先级组
@@ -97,14 +121,33 @@ impl ThreadPriorityTable {
         }
         
         let priority = thread.inner.exclusive_access().current_priority;
+        
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            hprintln!("Warning: Attempting to insert thread with invalid priority: {}", priority);
+            return;
+        }
+        
         self.table[priority as usize].push_back(thread.clone());
         self.tag_on_priority(priority);
     }
 
-    pub fn remove_thread(&mut self,thread: Arc<RtThread>) {
+    pub fn remove_thread(&mut self, thread: Arc<RtThread>) -> bool {
         let priority = thread.inner.exclusive_access().current_priority;
+        
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            hprintln!("Warning: Attempting to remove thread with invalid priority: {}", priority);
+            return false;
+        }
+        
+        // 检查线程是否在优先级表中
         if let Some(index) = self.get_thread_index(thread.clone()) {
             self.remove_thread_by_id(priority, index);
+            true
+        } else {
+            hprintln!("Warning: Attempting to remove thread that is not in priority table: {:?}", thread);
+            false
         }
     }
     
@@ -118,12 +161,24 @@ impl ThreadPriorityTable {
     }
     
     /// 获取指定优先级的线程队列
-    pub fn get_priority_queue(&self, priority: u8) -> &VecDeque<Arc<RtThread>> {
-        &self.table[priority as usize]
+    pub fn get_priority_queue(&self, priority: u8) -> Option<&VecDeque<Arc<RtThread>>> {
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            hprintln!("Warning: Attempting to get queue for invalid priority: {}", priority);
+            return None;
+        }
+        
+        Some(&self.table[priority as usize])
     }
     
     /// 将线程添加到指定优先级的队列末尾
     pub fn push_back_to_priority(&mut self, priority: u8, thread: Arc<RtThread>) {
+        // 检查优先级是否在有效范围内
+        if priority >= RT_THREAD_PRIORITY_MAX {
+            hprintln!("Warning: Attempting to push thread to invalid priority: {}", priority);
+            return;
+        }
+        
         // 检查线程状态，只有Ready状态的线程才能插入优先级列表
         let thread_stat = thread.inner.exclusive_access().stat.get_stat();
         if thread_stat != (ThreadState::Ready as u8) {
@@ -189,6 +244,81 @@ impl ThreadPriorityTable {
             }
         }
         true
+    }
+
+    /// 批量老化算法
+    /// 将所有线程的优先级-1（除了空闲线程 优先级为RT_THREAD_PRIORITY_MAX-1）
+    /// 这是一个高效的实现，通过直接操作优先级表来避免逐个处理线程
+    /// 实现思路：
+    /// 1. 遍历所有优先级
+    /// 2. 如果优先级为RT_THREAD_PRIORITY_MAX-1，则跳过
+    /// 3. 否则，将该优先级的所有线程加入到threads中
+    pub fn batch_aging(&mut self) {
+        // 从1开始，因为0无处老化，且空闲线程优先级为RT_THREAD_PRIORITY_MAX-1
+        // hprintln!("batch_aging: start");
+        
+        // 收集所有需要处理的线程，避免在遍历过程中修改集合
+        let mut threads_to_process = Vec::new();
+        
+        for priority in 1..(RT_THREAD_PRIORITY_MAX - 1) {
+            // hprintln!("batch_aging: collecting threads from priority: {}", priority);
+            // 将该优先级的所有线程加入到threads中
+            for thread in &self.table[priority as usize] {
+                // hprintln!("batch_aging: add thread: {:?}", thread);
+                threads_to_process.push((thread.clone(), priority));
+            }
+        }
+        
+        // 处理收集到的线程
+        for (thread, old_priority) in threads_to_process {
+            // hprintln!("batch_aging: processing thread: {:?} from priority: {}", thread, old_priority);
+            
+            // 验证线程名称的有效性
+            let thread_name = thread.thread_name();
+            if thread_name == "invalid utf8" {
+                hprintln!("Warning: Found thread with invalid name during aging, skipping");
+                continue;
+            }
+            
+            // 检查线程是否仍在就绪状态
+            let thread_stat = thread.inner.exclusive_access().stat.get_stat();
+            if thread_stat != (ThreadState::Ready as u8) {
+                hprintln!("Warning: Thread {:?} is not in Ready state during aging, skipping", thread);
+                continue;
+            }
+            
+            // 检查线程是否仍在原优先级队列中
+            if let Some(index) = self.get_thread_index(thread.clone()) {
+                let current_priority = thread.inner.exclusive_access().current_priority;
+                if current_priority == old_priority {
+                    // 移除线程
+                    self.remove_thread_by_id(old_priority, index);
+                    
+                    // 更新优先级
+                    let new_priority = if old_priority > 0 { old_priority - 1 } else { 0 };
+                    thread.inner.exclusive_access().current_priority = new_priority;
+                    
+                    // 更新掩码
+                    if cfg!(feature = "full_ffs") {
+                        let number = new_priority >> 3;
+                        thread.inner.exclusive_access().number_mask = 1 << number;
+                        thread.inner.exclusive_access().high_mask = 1 << (new_priority & 0x07);
+                    } else {
+                        thread.inner.exclusive_access().number_mask = 1 << new_priority;
+                    }
+                    
+                    // 重新插入到新优先级
+                    self.insert_thread(thread.clone());
+                    // hprintln!("batch_aging: moved thread {:?} from priority {} to {}", thread, old_priority, new_priority);
+                } else {
+                    hprintln!("Warning: Thread {:?} priority changed during aging, skipping", thread);
+                }
+            } else {
+                hprintln!("Warning: Thread {:?} not found in priority table during aging, skipping", thread);
+            }
+        }
+        
+        // hprintln!("batch_aging: end")
     }
 }
 
@@ -280,8 +410,8 @@ pub fn __rt_ffs(value: u32) -> u8 {
 }
 
 
-pub fn remove_thread(thread: Arc<RtThread>) {
-    RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(thread);
+pub fn remove_thread(thread: Arc<RtThread>) -> bool {
+    RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(thread)
 }
 
 pub fn insert_thread(thread: Arc<RtThread>) {
@@ -306,16 +436,12 @@ pub fn pop_thread(priority: u8) -> Option<Arc<RtThread>> {
 #[cfg(feature = "test")]
 pub fn output_priority_table(){
     let priority_table = RT_THREAD_PRIORITY_TABLE.exclusive_access();
-    hprintln!("bitmap:");
-    hprintln!("{:08b}\n",&priority_table.ready_priority_group);
-
-
+    hprintln!("\nbitmap:");
+    hprintln!("{:08b}",&priority_table.ready_priority_group);
     hprintln!("priority table:");
-
     for i in 0..RT_THREAD_PRIORITY_MAX {
-        hprintln!("priority: {}", i);
         for thread in priority_table.table[i as usize].iter() {
-            hprintln!("thread: {:?}", thread);
+            hprintln!("{} thread: {:?}",i , thread);
         }
     }
 }
