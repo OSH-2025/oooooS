@@ -1,5 +1,8 @@
 #!/bin/bash
 
+#* 使用方法：在脚本所在目录下执行 ./run_switch_tests.sh 自定义测试次数
+#* 确保原系统执行cargo run 命令时运行的是线程切换的测试
+
 # 设置测试次数
 TEST_COUNT=5
 if [ $# -gt 0 ]; then
@@ -22,6 +25,7 @@ declare -a RESULTS
 
 # 切换到Rust项目目录
 cd "$RUST_PROJECT_DIR"
+pwd
 
 # 进行多次测试
 for ((i=1; i<=$TEST_COUNT; i++)); do
