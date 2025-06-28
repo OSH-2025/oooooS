@@ -7,7 +7,7 @@ struct TestCell {
 }
 lazy_static! {
     static ref TEST_CELL: RTIntrFreeCell<TestCell> = unsafe { RTIntrFreeCell::new(TestCell { value: 0 }) };
-}
+} 
 
 /// 测试RTIntrFreeCell的exclusive_access方法
 pub fn test_cell_exclusive_access() {
