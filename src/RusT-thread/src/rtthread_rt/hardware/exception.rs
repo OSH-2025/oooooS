@@ -2,6 +2,9 @@
 //! 
 //! 定义了异常处理函数
 
+// 只在非基准测试模式下编译此文件
+#![cfg(not(feature = "bench_mode"))]
+
 #![warn(unused_imports)]
 
 use cortex_m_rt::{exception};
