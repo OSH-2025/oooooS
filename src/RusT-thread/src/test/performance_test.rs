@@ -149,9 +149,6 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
-        // else {
-        //     rt_thread_sleep(rt_thread_self().unwrap(), 10);
-        // }
     }
     
     hprintln!("高优先级处理器停止");
@@ -191,9 +188,6 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
-        // else {
-        //     rt_thread_sleep(rt_thread_self().unwrap(), 50);
-        // }
     }
     
     hprintln!("中优先级处理器停止");
@@ -234,9 +228,6 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
-        // else {
-        //     rt_thread_sleep(rt_thread_self().unwrap(), 100);
-        // }
     }
     
     hprintln!("低优先级处理器停止");
@@ -247,14 +238,7 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
 pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     hprintln!("结果分析器启动");
     
-    // 等待所有事件处理完成
-    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
-        rt_thread_sleep(rt_thread_self().unwrap(), 100);
-    }
-    
-    hprintln!("OK");
-    // // 再等待一段时间，确保所有处理线程都已退出
-    // rt_thread_sleep(rt_thread_self().unwrap(), 200);
+    rt_thread_suspend(rt_thread_self().unwrap());
     
     // 分析结果
     let events = COMPLETED_EVENTS.exclusive_access();
@@ -345,7 +329,7 @@ pub fn run_performance_test() {
         event_generator_entry as usize, 
         2*1024, 
         15, 
-        50
+        20
     );
     
     // 创建高优先级处理器线程
@@ -354,7 +338,7 @@ pub fn run_performance_test() {
         high_priority_processor_entry as usize, 
         2*1024, 
         10, 
-        100
+        20
     );
     
     // 创建中优先级处理器线程
@@ -363,7 +347,7 @@ pub fn run_performance_test() {
         medium_priority_processor_entry as usize, 
         2*1024, 
         15, 
-        100
+        20
     );
     
     // 创建低优先级处理器线程
@@ -372,7 +356,7 @@ pub fn run_performance_test() {
         low_priority_processor_entry as usize, 
         2*1024, 
         20, 
-        100
+        20
     );
     
     // 创建结果分析器线程 (最低优先级)
@@ -392,8 +376,14 @@ pub fn run_performance_test() {
     rt_thread_startup(high_processor);
     rt_thread_startup(medium_processor);
     rt_thread_startup(low_processor);
-    rt_thread_startup(analyzer);
+    rt_thread_startup(analyzer.clone());
     rt_hw_interrupt_enable(level);
     
-    
+    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
+       
+    }
+
+    rt_thread_resume(analyzer.clone());
+    rt_thread_suspend(rt_thread_self().unwrap());
+
 } 
