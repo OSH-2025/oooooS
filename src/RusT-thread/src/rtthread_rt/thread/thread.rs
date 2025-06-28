@@ -405,7 +405,7 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
 
     let level = rt_hw_interrupt_disable();
     
-    // // reset_priority
+    // reset_priority
     let init_priority = thread.inner.exclusive_access().init_priority.clone();
     rt_thread_set_priority(thread.clone(), init_priority);
 
