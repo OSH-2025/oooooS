@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 use alloc::boxed::Box;
 
 //-----------------测试：alloc/dealloc-----------------
-
 pub fn test_alloc_dealloc() {
     hprintln!("test_alloc_dealloc");
 
@@ -18,9 +17,7 @@ pub fn test_alloc_dealloc() {
 }
     
 //--------------测试：collectiion-----------------
-
 // vec
-
 pub fn test_vec() {
     hprintln!("test_vec");
     let mut vec = Vec::new();

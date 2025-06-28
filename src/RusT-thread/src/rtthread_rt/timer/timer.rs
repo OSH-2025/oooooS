@@ -114,6 +114,9 @@ pub type Callable = Box<dyn FnMut() + Send + Sync + 'static>;
 /// 单线程环境下的全局定时器数组，只能通过本文件的接口操作
 static mut TIMERS: Option<Mutex<Vec<TimerHandle>>> = Some(Mutex::new(Vec::new()));
 
+/// 延迟停止的定时器列表，用于避免在回调函数中直接操作定时器数组
+static mut PENDING_STOP_TIMERS: Option<Mutex<Vec<TimerHandle>>> = Some(Mutex::new(Vec::new()));
+
 /// 初始化定时器系统（可选，根据需要调用）
 pub fn timer_system_init() {
     unsafe {
@@ -162,17 +165,66 @@ pub fn rt_timer_start(timer: TimerHandle) {
 
 /// 停止定时器，将其从timers array 中移除并释放空间
 pub fn rt_timer_stop(timer: &TimerHandle) {
+    // hprintln!("rt_timer_stop");
+    
+    // 检查是否在中断上下文中调用（即是否在rt_timer_check的回调中）
+    // 如果是，则添加到延迟停止列表，避免死锁
+    unsafe {
+        if let Some(ref pending_stop_mutex) = PENDING_STOP_TIMERS {
+            let mut pending_stop = pending_stop_mutex.lock();
+            pending_stop.push(timer.clone());
+            // hprintln!("rt_timer_stop: added to pending stop list");
+            return; // 延迟处理，避免死锁
+        }
+    }
+    
+    // 如果不是在回调中调用，则直接处理
+    rt_timer_stop_impl(timer);
+}
+
+/// 实际的定时器停止实现
+fn rt_timer_stop_impl(timer: &TimerHandle) {
     let level = rt_hw_interrupt_disable();
+    // hprintln!("rt_timer_stop_impl 1");
     unsafe {
         if let Some(ref timers_mutex) = TIMERS {
+            // hprintln!("rt_timer_stop_impl 2");
             let mut timers = timers_mutex.lock();
+            // hprintln!("rt_timer_stop_impl 3");
             // Need to compare the Arc pointers themselves, not the locked RtTimer
             if let Some(pos) = timers.iter().position(|t| Arc::ptr_eq(t, timer)) {
+                // hprintln!("rt_timer_stop_impl 4");
                 timers.remove(pos);
+                // hprintln!("rt_timer_stop_impl: remove timer at pos: {}", pos);
             }
         }
     }
+    
+    // 清除定时器的激活标志，确保定时器被正确停止
+    {
+        // hprintln!("rt_timer_stop_impl 5");
+        let mut timer_ref = timer.lock();
+        // hprintln!("rt_timer_stop_impl 6");
+        timer_ref.parent.flag &= !RT_TIMER_FLAG_ACTIVATED;
+        // hprintln!("rt_timer_stop_impl: clear activated flag");
+    }
+    // hprintln!("rt_timer_stop_impl 7");
     rt_hw_interrupt_enable(level);
+}
+
+/// 处理延迟停止的定时器
+fn process_pending_stop_timers() {
+    unsafe {
+        if let Some(ref pending_stop_mutex) = PENDING_STOP_TIMERS {
+            let mut pending_stop = pending_stop_mutex.lock();
+            if !pending_stop.is_empty() {
+                // hprintln!("process_pending_stop_timers: processing {} timers", pending_stop.len());
+                for timer in pending_stop.drain(..) {
+                    rt_timer_stop_impl(&timer);
+                }
+            }
+        }
+    }
 }
 
 /// 定义定时器控制命令的枚举
@@ -308,6 +360,9 @@ pub fn rt_timer_check() {
              rt_timer_start(timer_handle.clone()); // Re-start the periodic timer
         }
     }
+    
+    // 处理延迟停止的定时器，避免在回调函数中死锁
+    process_pending_stop_timers();
 }
 
 

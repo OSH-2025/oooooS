@@ -4,13 +4,14 @@ use spin::Mutex;
 use alloc::boxed::Box;
 use cortex_m_semihosting::hprintln;
 use cortex_m::asm;
-use crate::rtthread_rt::timer::{RtTimer, rt_timer_start, rt_tick_get};
+use crate::rtthread_rt::timer::{RtTimer, rt_timer_start, rt_tick_get, rt_timer_stop};
 
 struct SharedCounter {
     count: u32,
 }
 
-pub fn run_all_timer_tests() {
+/// 定时器使用示例
+pub fn example_timer() {
     // 1. Create the shared data, protected by Arc and Mutex
     let counter = Arc::new(Mutex::new(SharedCounter { count: 0 }));
 
@@ -56,14 +57,19 @@ pub fn run_all_timer_tests() {
     // println!("Current count from main: {}", current_count);
 }    
 
-pub fn simple_timer_test() {
+pub fn run_all_timer_tests() {
+    // single_timer_test();
+    periodic_timer_test();
+}
+
+/// 简单的定时器测试
+pub fn single_timer_test() {
     let timer_callback = move || {
-        hprintln!("timer_test");
-        hprintln!("rt_tick_get: {}", rt_tick_get());
+        hprintln!("单次定时器测试：成功执行回调函数 at tick: {}", rt_tick_get());
     };
 
     let timer = Arc::new(Mutex::new(RtTimer::new(
-        "simple_timer_test", // name
+        "single_timer_test", // name
         0, // obj_type (example value)
         0x0, // flag (assuming 0x2 is periodic)
         Some(Box::new(timer_callback)), // timeout_func
@@ -79,3 +85,40 @@ pub fn simple_timer_test() {
 
     rt_timer_start(timer.clone());
 }
+
+/// 周期性定时器测试
+pub fn periodic_timer_test() {
+    let counter = Arc::new(Mutex::new(SharedCounter { count: 0 }));
+    
+    // 先创建timer变量，但暂时不设置回调函数
+    let timer = Arc::new(Mutex::new(RtTimer::new(
+        "periodic_timer_test", // name
+        0, // obj_type (example value)
+        0x2, // flag (assuming 0x2 is periodic)
+        None, // 暂时不设置回调函数
+        1000, // init_tick (initial delay in ticks)
+        1000, // timeout_tick (period for periodic timers)
+    )));
+    
+    // 创建Clone
+    let timer_clone = timer.clone();
+    
+    let timer_callback = move || {
+        let mut data = counter.lock();
+        data.count += 1;
+        hprintln!("周期性定时器测试：成功执行回调函数 at tick: {}, count: {}", rt_tick_get(), data.count);
+        if data.count >= 5 {
+            hprintln!("周期性定时器测试：达到5次回调，停止定时器");
+            rt_timer_stop(&timer_clone);
+        }
+    };
+
+    // 现在设置回调函数
+    {
+        let mut timer_ref = timer.lock();
+        timer_ref.set_timeout_callback(timer_callback);
+    }
+
+    rt_timer_start(timer.clone());
+}
+

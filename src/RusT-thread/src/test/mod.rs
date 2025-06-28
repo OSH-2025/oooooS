@@ -17,6 +17,7 @@ pub mod example;
 pub mod test_cell;
 pub mod performance_test;
 pub mod switch_time_test;
+pub mod comprehensive_example;
 
 
 // #[cfg(feature = "test_timer")]
@@ -33,10 +34,9 @@ pub mod test_all;
 pub fn run_all_tests() {
     test_all::print_logo();
 
-    // test_timer::simple_timer_test();
+    // test_timer::run_all_timer_tests();
 
     // test::test_small_mem::run_simple_mem_tests();
-    // test_timer::run_all_timer_tests();
     
     // test_mem::test_vec();
     // test_mem::test_alloc_dealloc();
