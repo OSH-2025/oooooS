@@ -24,7 +24,7 @@ pub extern "C" fn main_entry(arg: usize) -> () {
     // example::run_example();
     // comprehensive_example::run_comprehensive_demo();
     // example_mfq::run_example();
-    // performance_test::run_performance_test();
+    performance_test::run_performance_test();
     // switch_time_test::test_thread_switch_time();
     // 用户主线程入口
     let mut tick = rt_tick_get();
