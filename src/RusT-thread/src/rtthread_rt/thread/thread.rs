@@ -265,7 +265,9 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
     thread.inner.exclusive_access().stat = ThreadState::Close; 
     // 注意：不要在删除时调用调度器，避免在MFQ策略下触发batch_aging导致数据损坏
     // 调度器会在适当的时候自动调用
-    rt_schedule();
+    if get_current_scheduling_policy_name() != "Multi-Level Feedback Queue" {
+        rt_schedule();
+    }
 
     rt_hw_interrupt_enable(level);
     RT_EOK
@@ -313,7 +315,9 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
 
     // 注意：不要在挂起时调用调度器，避免在MFQ策略下触发batch_aging导致数据损坏
     // 调度器会在适当的时候自动调用
-    rt_schedule();
+    if get_current_scheduling_policy_name() != "Multi-Level Feedback Queue" {
+        rt_schedule();
+    }
 
     rt_hw_interrupt_enable(level);
 
