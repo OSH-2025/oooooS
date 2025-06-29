@@ -109,9 +109,10 @@ fn prepare_thread_switch() -> Option<ThreadSwitchContext> {
     // ----------------------------检查是否需要切换线程以及准备工作（更新当前线程）----------------------------
     if to_thread != scheduler.current_thread.clone().unwrap() {// 需要切换线程
         let priority_of_to_thread = to_thread.inner.exclusive_access().current_priority;
-        RT_THREAD_PRIORITY_TABLE.exclusive_access().pop_thread(priority_of_to_thread);
+        // 将to_thread从就绪队列中移除
+        let _ = RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(to_thread.clone());
         // 更新当前线程
-        scheduler.current_priority = priority_of_to_thread;
+        scheduler.current_priority = to_thread.inner.exclusive_access().current_priority;
         let from_thread = scheduler.current_thread.take();
         scheduler.current_thread = Some(to_thread.clone());
 

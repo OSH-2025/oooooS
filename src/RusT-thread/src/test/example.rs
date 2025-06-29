@@ -19,8 +19,8 @@ pub extern "C" fn example_thread_1(arg: usize) -> () {
             start_tick = rt_tick_get();
         }
         if rt_tick_get() - tic > 6000 {
-            // rt_thread_suspend(rt_thread_self().unwrap());
-            rt_thread_delete(rt_thread_self().unwrap());
+            rt_thread_suspend(rt_thread_self().unwrap());
+            // rt_thread_delete(rt_thread_self().unwrap());
         }
     }
 }
@@ -92,7 +92,7 @@ pub fn run_example() {
     hprintln!("run_example: level: {}", rt_hw_get_interrupt_level());
     // hprintln!("run_example...");
     let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 10, 1000);
-    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 17, 1000);
+    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 10, 1000);
     let thread_3 = rt_thread_create("example_thread_3", example_thread_3 as usize, 2*1024, 10, 1000);
     let thread_4 = rt_thread_create("example_thread_4", example_thread_4 as usize, 2*1024, 14, 1000);
 

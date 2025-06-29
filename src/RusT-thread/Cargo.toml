@@ -31,21 +31,10 @@ bench = false
 required-features = ["embedded"]
 
 # 添加 benchmark 配置
-# [[bench]]
-# name = "scheduler_bench"
-# harness = false
-
-# [[bench]]
-# name = "memory_bench"
-# harness = false
-
-# [[bench]]
-# name = "context_switch_bench"
-# harness = false
-
-# [[bench]]
-# name = "timer_bench"
-# harness = false
+[[bench]]
+name = "memory_bench"
+harness = false
+required-features = ["bench_mode"]
 
 [profile.release]
 codegen-units = 1 # better optimizations
@@ -66,6 +55,8 @@ embedded = [
     "tiny_ffs",
     "test"
 ]
+# 添加基准测试模式feature
+bench_mode = ["lazy_static"]
 #default = ["good_memory_allocator", "tiny_ffs","test"]
 good_memory_allocator = ["dep:good_memory_allocator"]
 buddy_system_allocator = ["dep:buddy_system_allocator"]
