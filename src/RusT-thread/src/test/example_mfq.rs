@@ -19,8 +19,8 @@ pub extern "C" fn example_thread_1(arg: usize) -> () {
             start_tick = rt_tick_get();
         }
         if rt_tick_get() - tic > 6000 {
-            // rt_thread_suspend(rt_thread_self().unwrap());
-            rt_thread_delete(rt_thread_self().unwrap());
+            rt_thread_suspend(rt_thread_self().unwrap());
+            // rt_thread_delete(rt_thread_self().unwrap());
         }
     }
 }
@@ -85,7 +85,7 @@ pub fn run_example() {
     set_mfq_scheduling();
     rt_thread_startup(thread_1);
     rt_thread_startup(thread_2.clone());
-    rt_thread_sleep(thread_2.clone(), 10000);
+    // rt_thread_sleep(thread_2.clone(), 10000);
     rt_thread_startup(thread_3);
     rt_thread_startup(thread_4);
     rt_hw_interrupt_enable(level);

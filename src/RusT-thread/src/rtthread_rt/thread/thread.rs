@@ -114,9 +114,13 @@ impl PartialEq for RtThread {
 
 impl Debug for RtThread {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let name_str = core::str::from_utf8(&self.name)
-            .unwrap_or("invalid utf8")
-            .trim_end_matches('\0');
+        // 找到第一个 null 字节的位置
+        let null_pos = self.name.iter().position(|&b| b == 0).unwrap_or(self.name.len());
+        let name_slice = &self.name[..null_pos];
+        
+        let name_str = core::str::from_utf8(name_slice)
+            .unwrap_or("invalid utf8");
+        
         f.debug_struct("RtThread")
             .field("name", &name_str)
             .field("object_type", &self.object_type)
@@ -128,10 +132,12 @@ impl RtThread {
     /// 线程名
     /// 使用方法：hprint!("{}", XX.thread_name);
     pub fn thread_name(&self) -> &str {
-        let name_str = core::str::from_utf8(&self.name)
+        // 找到第一个 null 字节的位置
+        let null_pos = self.name.iter().position(|&b| b == 0).unwrap_or(self.name.len());
+        let name_slice = &self.name[..null_pos];
+        
+        core::str::from_utf8(name_slice)
             .unwrap_or("invalid utf8")
-            .trim_end_matches('\0');
-        name_str
     }
 }
 
@@ -190,6 +196,15 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
     // hprintln!("stack_pointer in rt_thread_create: {:x}", stack_pointer.clone());
     let name_bytes = name.as_bytes();
     let len = name_bytes.len().min(RT_NAME_MAX);
+    
+    // 创建并正确初始化名称数组
+    let mut name_array = [0u8; RT_NAME_MAX];
+    name_array[..len].copy_from_slice(&name_bytes[..len]);
+    // 确保字符串以 null 结尾（虽然数组已经初始化为0，但为了明确性）
+    if len < RT_NAME_MAX {
+        name_array[len] = 0;
+    }
+    
     let timer_callback = move || {
         hprintln!("timer_callback");
     };
@@ -210,10 +225,8 @@ pub fn rt_thread_create(name: &str, entry: usize, stack_size: usize, priority: u
         timer: None,
         })
     };
-    let mut name = [0u8; RT_NAME_MAX];
-    name[..len].copy_from_slice(&name_bytes[..len]);
     let thread = RtThread {
-        name,
+        name: name_array,
         object_type: 0,
         inner,
         cleanup: None,
@@ -244,13 +257,15 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
         return RT_EOK;
     }
     if thread.inner.exclusive_access().stat.get_stat() != (ThreadState::Init as u8) {
-        remove_thread(thread.clone());
+        let _ = remove_thread(thread.clone());
     }
     
     let level = rt_hw_interrupt_disable();
 
     thread.inner.exclusive_access().stat = ThreadState::Close; 
-    rt_schedule();
+    // 注意：不要在删除时调用调度器，避免在MFQ策略下触发batch_aging导致数据损坏
+    // 调度器会在适当的时候自动调用
+    // rt_schedule();
 
     rt_hw_interrupt_enable(level);
     RT_EOK
@@ -291,13 +306,17 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
     // 如果线程在就绪队列中，则将其从就绪队列中移除
-    remove_thread(thread.clone());
-    // hprintln!("rt_thread_suspend: remove_thread done level: {}", rt_hw_get_interrupt_level());
+
+    hprintln!("rt_thread_suspend: thread: {:?} at priority: {}", thread, thread.inner.exclusive_access().current_priority);
+    let _ = remove_thread(thread.clone());
+    hprintln!("rt_thread_suspend: removed");
+
+    // 注意：不要在挂起时调用调度器，避免在MFQ策略下触发batch_aging导致数据损坏
+    // 调度器会在适当的时候自动调用
+    // rt_schedule();
 
     rt_hw_interrupt_enable(level);
-    // hprintln!("rt_thread_suspend after enable: level: {}", rt_hw_get_interrupt_level());
-    // 调用调度器让出CPU
-    rt_schedule();
+
     RT_EOK
 }
 
@@ -327,7 +346,9 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
     let timer_callback = move || {
         hprintln!("timer_callback: resume thread");
         let timer = thread_clone.inner.exclusive_access().timer.take().unwrap();
+        hprintln!("timer_callback: stop timer");
         rt_timer_stop(&timer);
+        hprintln!("timer_callback: stop timer done");
         // 清空定时器
         thread_clone.inner.exclusive_access().timer = None;
         // 清空错误状态
@@ -343,7 +364,7 @@ pub fn rt_thread_sleep(thread: Arc<RtThread>, tick: usize) -> RtErrT {
     }
     // 创建单次定时器
     let timer = Arc::new(Mutex::new(RtTimer::new(
-        core::str::from_utf8(&thread.name).unwrap(),
+        thread.thread_name(),
         0,
         0x0,  // 单次定时器0，不是周期定时器2
         Some(Box::new(timer_callback)),
@@ -405,14 +426,15 @@ pub fn rt_thread_resume(thread: Arc<RtThread>) -> RtErrT {
 
     let level = rt_hw_interrupt_disable();
     
-    // // reset_priority
+    // reset_priority
     let init_priority = thread.inner.exclusive_access().init_priority.clone();
     rt_thread_set_priority(thread.clone(), init_priority);
 
     thread.inner.exclusive_access().stat = ThreadState::Ready;
-    thread_priority_table::insert_thread(thread.clone());
+    insert_thread(thread.clone());
+    // hprintln!("rt_thread_resume: insert_thread done");
     rt_hw_interrupt_enable(level);
-    // rt_schedule();
+    rt_schedule();
     RT_EOK
 }
 
@@ -449,7 +471,7 @@ pub fn rt_thread_set_priority(thread: Arc<RtThread>,mut priority: u8) -> RtErrT 
     inner.current_priority = priority;
     let level = rt_hw_interrupt_disable();
     if inner.stat.get_stat() == (ThreadState::Ready as u8) {// 如果线程在就绪队列中，则将其从就绪队列中移除再插入
-        remove_thread(thread.clone());
+        let _ = remove_thread(thread.clone());
         inner.current_priority = priority;
         if cfg!(feature = "full_ffs") {
             let number = priority >> 3;

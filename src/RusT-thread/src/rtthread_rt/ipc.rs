@@ -1,8 +1,7 @@
 //! ipc 模块
 //! 
-//! 本模块实现了RT-Thread的IPC机制
-//! 包括消息队列、信号量、互斥锁、事件等
-//! 出于实时性考虑，这里目前只实现 PRIO 模式（优先级模式），不去实现 FIFO 模式（先进先出模式）
+//! 本模块为RusT-Thread的IPC机制，目前实现了信号量的操作
+//! 
 //! 结构体：
 //!     IPCBase: 基础 IPC 结构体
 //!     Semaphore: 信号量结构体
@@ -79,8 +78,6 @@ pub fn rt_ipc_init(name: &str, object_type: u8) -> Arc<IPCBase> {
 /// @param thread 线程
 pub fn rt_ipc_list_suspend(ipc: Arc<IPCBase>, thread: Arc<RtThread>) {
     rt_thread_suspend(thread.clone());
-
-    // todo 这里不知道能不能正确运行
     
     // 若队列为空，则直接插入队列
     if ipc.thread_queue.exclusive_session(|queue| queue.is_empty()) {
@@ -184,7 +181,7 @@ pub fn rt_sem_take(sem: Arc<Semaphore>, timeout: usize) -> RtErrT {
         }
         else {
             let thread = rt_thread_self().unwrap();
-            thread.inner.exclusive_access().error = RT_ERROR;
+            thread.inner.exclusive_access().error = RT_EOK;
             rt_ipc_list_suspend(sem.parent.exclusive_session(|ipc| ipc.clone()), thread.clone());
             hprintln!("rt_sem_take: {:?}", thread);
             hprintln!("进入计时，挂起");

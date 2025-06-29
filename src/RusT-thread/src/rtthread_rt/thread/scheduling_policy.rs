@@ -13,6 +13,7 @@ use crate::rtthread_rt::kservice::RTIntrFreeCell;
 use crate::rtthread_rt::rtconfig::*;
 use crate::rtthread_rt::rtdef::ThreadState;
 use crate::rtthread_rt::hardware::*;
+use crate::rtthread_rt::thread::thread_priority_table::output_priority_table;
 use crate::rtthread_rt::thread::*;
 use crate::rtthread_rt::timer::rt_tick_get;
 
@@ -22,6 +23,7 @@ pub trait SchedulingPolicy: Send + Sync {
     /// 选择下一个要运行的线程
     /// 
     /// 注意：调用该函数时，current_thread在运行中，to_thread应该在就绪队列中
+    /// 调用完成后，to_thread被移除就绪队列，
     /// 
     /// # 参数
     /// * `current_thread` - 当前运行的线程
@@ -66,7 +68,7 @@ impl SchedulingPolicy for PrioritySchedulingPolicy {
         if thread_stat != (ThreadState::Ready as u8) {
             hprintln!("Warning: Found non-Ready thread in priority table. Thread state: {}, removing from table.", thread_stat);
             // 移除状态不正确的线程
-            RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(to_thread.clone());
+            let _ = RT_THREAD_PRIORITY_TABLE.exclusive_access().remove_thread(to_thread.clone());
             // 重新获取下一个线程
             to_thread = RT_THREAD_PRIORITY_TABLE.exclusive_access().get_thread(priority_of_to_thread)?;
         }
@@ -121,9 +123,17 @@ impl SchedulingPolicy for MultiLevelFeedbackQueuePolicy {
         current_thread: &Option<Arc<RtThread>>,
     ) -> Option<(Arc<RtThread>, bool)> {
         // 实现多级反馈队列调度逻辑
+        // 当前线程：优先级还原为初始优先级
         if let Some(current_thread) = current_thread {
-            rt_thread_aging(current_thread.clone());
+            let init_priority = current_thread.inner.exclusive_access().init_priority.clone();
+            rt_thread_set_priority(current_thread.clone(), init_priority);
+            // hprintln!("MFQ: current_thread: {} init_priority: {}", current_thread.thread_name(), init_priority);
         }
+
+        // 其它线程：优先级-1
+        RT_THREAD_PRIORITY_TABLE.exclusive_access().batch_aging();
+        // output_priority_table();
+        
         // 使用优先级调度作为基础
         let priority_policy = PrioritySchedulingPolicy;
         priority_policy.select_next_thread(current_thread)
@@ -141,7 +151,6 @@ pub fn set_priority_scheduling() {
     let mut scheduler = RT_SCHEDULER.exclusive_access();
     scheduler.set_scheduling_policy(Box::new(PrioritySchedulingPolicy));
 }
-
 
 /// 设置调度策略为多级反馈队列调度
 pub fn set_mfq_scheduling() {

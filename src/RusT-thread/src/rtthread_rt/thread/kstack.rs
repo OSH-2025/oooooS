@@ -38,9 +38,19 @@ pub struct KernelStack {
 
 impl KernelStack {
     /// 创建一个新的内核栈
+    /// 
+    /// # 注意
+    /// 若 `size` 过小时（如200），线程极容易溢出栈引发错误！
+    /// `size = 1024` 可保证正常工作（但大量递归调用仍会溢出）。
+    /// # Arguments
+    /// * `size` - 内核栈的大小，单位是字节
+    /// /// 
+    /// # Returns
+    /// 返回一个新的 `KernelStack` 实例
+    ///
     pub fn new(size: usize) -> Self {
-        //! fixme:功能不稳定：若size = 200 时会停在Alloc。
-        //! size = 1024可正常工作。
+        //! 注意：若size 过小时（如200）线程极容易溢出栈引发错误！。
+        //! size = 1024可保证正常工作（但大量递归调用仍会溢出）。
         // hprintln!("KernelStack::new: enter");
         let bottom = unsafe {
             alloc(Layout::from_size_align(size, size).unwrap()) as usize

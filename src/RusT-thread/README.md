@@ -40,6 +40,7 @@ oooooS/src/RusT-thread/src
 │   │   ├── kstack.rs                 // 内核栈管理
 │   │   ├── mod.rs                    // 线程模块统一导出
 │   │   ├── scheduler.rs              // 线程调度器实现
+│   │   ├── scheduling_policy.rs      // 调度策略实现
 │   │   ├── thread.rs                 // 线程核心实现
 │   │   └── thread_priority_table.rs  // 线程优先级表管理
 │   └── timer                         // 定时器模块
@@ -48,14 +49,9 @@ oooooS/src/RusT-thread/src
 │       └── timer.rs                  // 定时器核心实现
 ├── test                              // 测试模块
 │   ├── mod.rs                        // 测试模块统一导出和测试运行入口
-│   ├── test_excp.rs                  // 异常处理测试
-│   ├── test_interupt.rs              // 中断处理测试
-│   ├── test_mem.rs                   // 内存管理测试
-│   ├── test_scheduler.rs             // 调度器测试
-│   ├── test_small_mem.rs             // 小内存分配器测试
-│   ├── test_thread.rs                // 线程功能测试
-│   └── test_timer.rs                 // 定时器功能测试
+│   └── ......
 └── user_main.rs                      // 用户主线程入口，用户应用程序逻辑实现
+
 </pre>
 
 ## 项目实现

@@ -49,9 +49,9 @@ impl<T> RTIntrFreeCell<T> {
     /// 获取一个中断安全的RefMut
     /// 
     /// 使用示例:
-    /// 
+    /// ```rust
     /// let mut data = DATA.exclusive_access();
-    /// 
+    /// ```
     pub fn exclusive_access(&self) -> RTIntrRefMut<'_, T> {
         let level = rt_hw_interrupt_disable();
         // let level = 0;

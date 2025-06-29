@@ -11,6 +11,7 @@ pub const RT_THREAD_PRIORITY_MAX: u8 = 32;
 pub const RT_THREAD_PRIORITY_MAX: u8 = 256;
 
 /// Tick频率,不是真正的机器时钟频率
+// pub const RT_TICK_PER_SECOND: u32 = 100;// 演示用
 pub const RT_TICK_PER_SECOND: u32 = 1000000;
 
 /// 对齐大小
