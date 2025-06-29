@@ -5,6 +5,7 @@
 use crate::rtthread_rt::thread::*;
 use crate::rtthread_rt::timer::*;
 use crate::rtthread_rt::hardware::*;
+use cortex_m::asm;
 use cortex_m_semihosting::hprintln;
 
 extern crate alloc;
@@ -24,6 +25,34 @@ const MAGENTA: &str = "\x1b[35m";
 const CYAN: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
+
+/// 评价性能并返回星级
+fn rate_performance_stars(value: f32, excellent: f32, poor: f32) -> (&'static str, &'static str) {
+    if value <= excellent {
+        (GREEN, "★★★★★ (优秀)")
+    } else if value <= (excellent + poor) / 3.0 {
+        (GREEN, "★★★★☆ (良好)")
+    } else if value <= 2.0 * (excellent + poor) / 3.0 {
+        (YELLOW, "★★★☆☆ (一般)")
+    } else if value <= poor {
+        (YELLOW, "★★☆☆☆ (较差)")
+    } else {
+        (RED, "★☆☆☆☆ (需优化)")
+    }
+}
+
+/// 打印单个性能条形图
+fn print_bar_chart(label: &str, color: &str, value: f32, max_value: f32) {
+    let bar_width = 30;
+    let bar_len = ((value / max_value) * bar_width as f32) as usize;
+    
+    hprintln!("{}{} │{}{} {:.2}ms", 
+             color, label, 
+             "█".repeat(bar_len.min(bar_width)), 
+             RESET, value);
+}
+
+
 
 /// 随机数生成器
 struct RandomGenerator {
@@ -93,47 +122,17 @@ lazy_static! {
     static ref COMPLETED_EVENTS: RTIntrFreeCell<Vec<Event>> = unsafe { RTIntrFreeCell::new(Vec::new()) };
     static ref EVENT_COUNTER: AtomicU32 = AtomicU32::new(0);
     static ref COMPLETED_COUNTER: AtomicU32 = AtomicU32::new(0);
+    static ref COMPLETED_PROCESSOR: AtomicU32 = AtomicU32::new(0);
 }
-
-
-/// 评价性能并返回星级
-fn rate_performance_stars(value: f32, excellent: f32, poor: f32) -> (&'static str, &'static str) {
-    if value <= excellent {
-        (GREEN, "★★★★★ (优秀)")
-    } else if value <= (excellent + poor) / 3.0 {
-        (GREEN, "★★★★☆ (良好)")
-    } else if value <= 2.0 * (excellent + poor) / 3.0 {
-        (YELLOW, "★★★☆☆ (一般)")
-    } else if value <= poor {
-        (YELLOW, "★★☆☆☆ (较差)")
-    } else {
-        (RED, "★☆☆☆☆ (需优化)")
-    }
-}
-
-/// 打印单个性能条形图
-fn print_bar_chart(label: &str, color: &str, value: f32, max_value: f32) {
-    let bar_width = 30;
-    let bar_len = ((value / max_value) * bar_width as f32) as usize;
-    
-    hprintln!("{}{} │{}{} {:.2}ms", 
-             color, label, 
-             "█".repeat(bar_len.min(bar_width)), 
-             RESET, value);
-}
-
-
-
-
-
 
 // 目标生成事件数
 const TARGET_EVENT_COUNT: u32 = 100;
 
+
 /// 事件生成线程入口函数
 pub extern "C" fn event_generator_entry(arg: usize) -> () {
     let mut rng = RandomGenerator::new(rt_tick_get() as u32);
-    let event_probability = 10; // 20% 概率生成事件
+    let event_probability = 10; // 10% 概率生成事件
     
     hprintln!("事件生成器启动，目标生成 {} 个事件", TARGET_EVENT_COUNT);
     
@@ -146,7 +145,7 @@ pub extern "C" fn event_generator_entry(arg: usize) -> () {
             let priority = (rng.next() % 10 + 1) as u8;
             
             let event = Event::new(event_id, priority);
-            // hprintln!("生成事件 #{} 优先级: {}", event_id, priority);
+
             // 根据优先级使用不同颜色
             let priority_color = if priority >= 7 {
                 RED // 高优先级
@@ -156,8 +155,8 @@ pub extern "C" fn event_generator_entry(arg: usize) -> () {
                 GREEN // 低优先级
             };
             
-            hprintln!("{}◆ 生成事件 #{} {}[优先级: {}]{}", 
-                     BLUE, event_id, priority_color, priority, RESET);
+            // hprintln!("{}◆ 生成事件 #{} {}[优先级: {}]{}", 
+            //          BLUE, event_id, priority_color, priority, RESET);
             
             // 将事件添加到队列
             EVENT_QUEUE.exclusive_access().push(event);
@@ -186,28 +185,23 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
         if let Some(mut event) = event_opt {
             // 记录开始处理的时间
             event.processing_tick = rt_tick_get();
-            hprintln!("{}▲ 高优先级处理器处理事件 #{}{}", RED, event.id, RESET);
+            // hprintln!("{}▲ 高优先级处理器处理事件 #{}{}", RED, event.id, RESET);
             
             // 模拟处理时间 (优先级越高处理越快)
             let processing_time = 200 - event.priority as u32;
-            // rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
             
             // 记录完成时间
             event.completion_tick = rt_tick_get() + processing_time;
             
             // 添加到已完成事件列表并增加计数器
-            let level = rt_hw_interrupt_disable();
             COMPLETED_EVENTS.exclusive_access().push(event);
-            rt_hw_interrupt_enable(level);
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
-        // else if EVENT_COUNTER.load(Ordering::SeqCst) == TARGET_EVENT_COUNT {
-        //     break;
-        // }
     }
     
     hprintln!("{}✓ 高优先级处理器停止{}", RED, RESET);
+    COMPLETED_PROCESSOR.fetch_add(1, Ordering::SeqCst);
     rt_thread_delete(rt_thread_self().unwrap());
 }
 
@@ -218,7 +212,7 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
     while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
         let event_opt = {
             let mut queue = EVENT_QUEUE.exclusive_access();
-            // 查找优先级 4-6 的事件
+            // 查找优先级 4-7 的事件
             let pos = queue.iter().position(|e| e.priority >= 4 && e.priority <= 7);
             let event = pos.map(|i| queue.remove(i));
 
@@ -228,28 +222,23 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
         if let Some(mut event) = event_opt {
             // 记录开始处理的时间
             event.processing_tick = rt_tick_get();
-            hprintln!("{}■ 中优先级处理器处理事件 #{}{}", YELLOW, event.id, RESET);
+            // hprintln!("{}■ 中优先级处理器处理事件 #{}{}", YELLOW, event.id, RESET);
             
             // 模拟处理时间 (优先级越高处理越快)
-            let processing_time = 30 - event.priority as u32 * 2;
-            // rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
+            let processing_time = 300 - event.priority as u32 * 2;
             
             // 记录完成时间
             event.completion_tick = rt_tick_get() + processing_time;
             
             // 添加到已完成事件列表并增加计数器
-            let level = rt_hw_interrupt_disable();
             COMPLETED_EVENTS.exclusive_access().push(event);
-            rt_hw_interrupt_enable(level);
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
-        // else if EVENT_COUNTER.load(Ordering::SeqCst) == TARGET_EVENT_COUNT {
-        //     break;
-        // }
     }
     
     hprintln!("{}✓ 中优先级处理器停止{}", YELLOW, RESET);
+    COMPLETED_PROCESSOR.fetch_add(1, Ordering::SeqCst);
     rt_thread_delete(rt_thread_self().unwrap());
 }
 
@@ -271,19 +260,16 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
         if let Some(mut event) = event_opt {
             // 记录开始处理的时间
             event.processing_tick = rt_tick_get();
-            hprintln!("{}● 低优先级处理器处理事件 #{}{}", GREEN, event.id, RESET);
+            // hprintln!("{}● 低优先级处理器处理事件 #{}{}", GREEN, event.id, RESET);
             
             // 模拟处理时间 (优先级越高处理越快)
-            let processing_time = 50 - event.priority as u32 * 5;
-            // rt_thread_sleep(rt_thread_self().unwrap(), processing_time);
+            let processing_time = 500 - event.priority as u32 * 5;
             
             // 记录完成时间
             event.completion_tick = rt_tick_get() + processing_time;
             
             // 添加到已完成事件列表并增加计数器
-            let level = rt_hw_interrupt_disable();
             COMPLETED_EVENTS.exclusive_access().push(event);
-            rt_hw_interrupt_enable(level);
             
             COMPLETED_COUNTER.fetch_add(1, Ordering::SeqCst);
         }
@@ -291,15 +277,13 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
     }
     
     hprintln!("{}✓ 低优先级处理器停止{}", GREEN, RESET);
+    COMPLETED_PROCESSOR.fetch_add(1, Ordering::SeqCst);
     rt_thread_delete(rt_thread_self().unwrap());
 }
 
 /// 结果分析线程入口函数
-pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
+pub extern "C" fn result_analyzer_entry(arg: usize) -> () {    
     hprintln!("结果分析器启动");
-    
-    rt_thread_suspend(rt_thread_self().unwrap());
-    
 
     // 分析结果
     let events = COMPLETED_EVENTS.exclusive_access();
@@ -345,6 +329,7 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     let avg_processing_time = rt_tick_to_ms(total_processing_time) as f32 / total_events as f32;
     let avg_total_time = rt_tick_to_ms(total_time) as f32 / total_events as f32;
     
+    
     // 打印分割线
     hprintln!("\n{}{}══════════════════════════════════════════════════{}", BOLD, CYAN, RESET);
     hprintln!("{}{}             性能测试最终结果报告             {}", BOLD, CYAN, RESET);
@@ -352,33 +337,61 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     
     hprintln!("\n{}{}✓ 测试成功完成！{}", BOLD, GREEN, RESET);
     hprintln!("{}📊 总事件数: {}{}", BOLD, total_events, RESET);
+    
+    // 创建性能评分（简单视觉化）
     hprintln!("\n{}关键性能指标:{}", BOLD, RESET);
-    hprintln!("平均响应时间: {:.2} ms", avg_response_time);
-    hprintln!("平均处理时间: {} ms", avg_processing_time);
-    hprintln!("平均总时间: {} ms", avg_total_time);
+    hprintln!("{}▶ 平均响应时间: {:.2} ms  {}{}{}", 
+             CYAN, avg_response_time, 
+             rate_performance_stars(avg_response_time, 5.0, 50.0).0,
+             rate_performance_stars(avg_response_time, 5.0, 50.0).1,
+             RESET);
+    hprintln!("{}▶ 平均处理时间: {:.2} ms  {}{}{}", 
+             CYAN, avg_processing_time, 
+             rate_performance_stars(avg_processing_time, 10.0, 100.0).0,
+             rate_performance_stars(avg_processing_time, 10.0, 100.0).1,
+             RESET);
+    hprintln!("{}▶ 平均总时间: {:.2} ms    {}{}{}", 
+             CYAN, avg_total_time, 
+             rate_performance_stars(avg_total_time, 20.0, 150.0).0,
+             rate_performance_stars(avg_total_time, 20.0, 150.0).1,
+             RESET);
     
+    hprintln!("\n{}按优先级分析结果:{}", BOLD, RESET);
     
-    // 按优先级输出结果
+    // 按优先级输出结果，添加视觉元素
     if high_count > 0 {
         let high_avg = rt_tick_to_ms(high_response_time) as f32 / high_count as f32;
-        hprintln!("高优先级事件 (8-10): {} 个, 平均响应时间: {} ms", 
-                 high_count, high_avg);
+        let (high_color, high_stars) = rate_performance_stars(high_avg, 3.0, 30.0);
+        hprintln!("{}▲ 高优先级事件 (7-10): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
+                 RED, high_count, high_avg, high_color, high_stars, RESET);
+        
+        // 保存用于后面绘制图表
+        print_bar_chart("高优先级", RED, high_avg, high_avg.max(1.0));
     }
     
     if medium_count > 0 {
         let medium_avg = rt_tick_to_ms(medium_response_time) as f32 / medium_count as f32;
-        hprintln!("中优先级事件 (4-7): {} 个, 平均响应时间: {} ms", 
-                 medium_count, medium_avg);
+        let (medium_color, medium_stars) = rate_performance_stars(medium_avg, 5.0, 50.0);
+        hprintln!("{}■ 中优先级事件 (4-6): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
+                 YELLOW, medium_count, medium_avg, medium_color, medium_stars, RESET);
+        
+        // 保存用于后面绘制图表
+        print_bar_chart("中优先级", YELLOW, medium_avg, medium_avg.max(1.0));
     }
     
     if low_count > 0 {
         let low_avg = rt_tick_to_ms(low_response_time) as f32 / low_count as f32;
-        hprintln!("低优先级事件 (1-3): {} 个, 平均响应时间: {} ms", 
-                 low_count, low_avg);
+        let (low_color, low_stars) = rate_performance_stars(low_avg, 10.0, 100.0);
+        hprintln!("{}● 低优先级事件 (1-3): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
+                 GREEN, low_count, low_avg, low_color, low_stars, RESET);
+        
+        // 保存用于后面绘制图表
+        print_bar_chart("低优先级", GREEN, low_avg, low_avg.max(1.0));
     }
     
-    hprintln!("结果分析器停止");
-    hprintln!("测试完成");
+    hprintln!("\n{}{}══════════════════════════════════════════════════{}", BOLD, CYAN, RESET);
+    hprintln!("{}{}           测试完成 - RusT线程系统                    {}", BOLD, CYAN, RESET);
+    hprintln!("{}{}══════════════════════════════════════════════════{}", BOLD, CYAN, RESET);
 
 }
 
@@ -394,6 +407,7 @@ pub fn run_performance_test() {
     // 重置测试状态
     EVENT_COUNTER.store(0, Ordering::SeqCst);
     COMPLETED_COUNTER.store(0, Ordering::SeqCst);
+    COMPLETED_PROCESSOR.store(0, Ordering::SeqCst);
     EVENT_QUEUE.exclusive_access().clear();
     COMPLETED_EVENTS.exclusive_access().clear();
     
@@ -402,7 +416,7 @@ pub fn run_performance_test() {
         "event_gen", 
         event_generator_entry as usize, 
         2*1024, 
-        15, 
+        10, 
         20
     );
     
@@ -420,7 +434,7 @@ pub fn run_performance_test() {
         "med_proc", 
         medium_priority_processor_entry as usize, 
         2*1024, 
-        15, 
+        10, 
         20
     );
     
@@ -429,7 +443,7 @@ pub fn run_performance_test() {
         "low_proc", 
         low_priority_processor_entry as usize, 
         2*1024, 
-        20, 
+        10, 
         20
     );
     
@@ -438,26 +452,25 @@ pub fn run_performance_test() {
         "analyzer", 
         result_analyzer_entry as usize, 
         2*1024, 
-        25, 
+        10, 
         100
     );
     
     // 启动所有线程
     hprintln!("性能测试线程已启动");
     let level = rt_hw_interrupt_disable();
-    set_mfq_scheduling();
+    // set_mfq_scheduling();
     rt_thread_startup(generator);
     rt_thread_startup(high_processor);
     rt_thread_startup(medium_processor);
     rt_thread_startup(low_processor);
-    rt_thread_startup(analyzer.clone());
     rt_hw_interrupt_enable(level);
     
-    while COMPLETED_COUNTER.load(Ordering::SeqCst) < TARGET_EVENT_COUNT {
-       
+    while COMPLETED_PROCESSOR.load(Ordering::SeqCst) < 3 {
+        rt_thread_yield();
     }
 
-    rt_thread_resume(analyzer.clone());
+    rt_thread_startup(analyzer);
     rt_thread_suspend(rt_thread_self().unwrap());
 
 } 

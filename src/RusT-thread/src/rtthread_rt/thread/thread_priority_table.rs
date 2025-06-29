@@ -146,7 +146,7 @@ impl ThreadPriorityTable {
             self.remove_thread_by_id(priority, index);
             true
         } else {
-            hprintln!("Warning: Attempting to remove thread that is not in priority table: {:?}", thread);
+            // hprintln!("Warning: Attempting to remove thread that is not in priority table: {:?}", thread);
             false
         }
     }

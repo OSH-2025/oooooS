@@ -265,7 +265,7 @@ pub fn rt_thread_delete(thread: Arc<RtThread>) -> RtErrT {
     thread.inner.exclusive_access().stat = ThreadState::Close; 
     // 注意：不要在删除时调用调度器，避免在MFQ策略下触发batch_aging导致数据损坏
     // 调度器会在适当的时候自动调用
-    // rt_schedule();
+    rt_schedule();
 
     rt_hw_interrupt_enable(level);
     RT_EOK
@@ -307,13 +307,13 @@ pub fn rt_thread_suspend(thread: Arc<RtThread>) -> RtErrT {
     thread.inner.exclusive_access().stat = ThreadState::Suspend;
     // 如果线程在就绪队列中，则将其从就绪队列中移除
 
-    hprintln!("rt_thread_suspend: thread: {:?} at priority: {}", thread, thread.inner.exclusive_access().current_priority);
+    // hprintln!("rt_thread_suspend: thread: {:?} at priority: {}", thread, thread.inner.exclusive_access().current_priority);
     let _ = remove_thread(thread.clone());
-    hprintln!("rt_thread_suspend: removed");
+    // hprintln!("rt_thread_suspend: removed");
 
     // 注意：不要在挂起时调用调度器，避免在MFQ策略下触发batch_aging导致数据损坏
     // 调度器会在适当的时候自动调用
-    // rt_schedule();
+    rt_schedule();
 
     rt_hw_interrupt_enable(level);
 
