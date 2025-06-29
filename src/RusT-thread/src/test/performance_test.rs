@@ -188,10 +188,13 @@ pub extern "C" fn high_priority_processor_entry(arg: usize) -> () {
             // hprintln!("{}▲ 高优先级处理器处理事件 #{}{}", RED, event.id, RESET);
             
             // 模拟处理时间 (优先级越高处理越快)
-            let processing_time = 200 - event.priority as u32;
+            let processing_time = 1000;
+            for i in 1..processing_time {
+                asm::nop();
+            }
             
             // 记录完成时间
-            event.completion_tick = rt_tick_get() + processing_time;
+            event.completion_tick = rt_tick_get() + 1;
             
             // 添加到已完成事件列表并增加计数器
             COMPLETED_EVENTS.exclusive_access().push(event);
@@ -225,10 +228,13 @@ pub extern "C" fn medium_priority_processor_entry(arg: usize) -> () {
             // hprintln!("{}■ 中优先级处理器处理事件 #{}{}", YELLOW, event.id, RESET);
             
             // 模拟处理时间 (优先级越高处理越快)
-            let processing_time = 300 - event.priority as u32 * 2;
+            let processing_time = 10000;
+            for i in 1..processing_time {
+                asm::nop();
+            }
             
             // 记录完成时间
-            event.completion_tick = rt_tick_get() + processing_time;
+            event.completion_tick = rt_tick_get() + 1;
             
             // 添加到已完成事件列表并增加计数器
             COMPLETED_EVENTS.exclusive_access().push(event);
@@ -263,10 +269,13 @@ pub extern "C" fn low_priority_processor_entry(arg: usize) -> () {
             // hprintln!("{}● 低优先级处理器处理事件 #{}{}", GREEN, event.id, RESET);
             
             // 模拟处理时间 (优先级越高处理越快)
-            let processing_time = 500 - event.priority as u32 * 5;
+            let processing_time = 50000;
+            for i in 1..processing_time {
+                asm::nop();
+            }
             
             // 记录完成时间
-            event.completion_tick = rt_tick_get() + processing_time;
+            event.completion_tick = rt_tick_get() + 1;
             
             // 添加到已完成事件列表并增加计数器
             COMPLETED_EVENTS.exclusive_access().push(event);
@@ -287,49 +296,51 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
 
     // 分析结果
     let events = COMPLETED_EVENTS.exclusive_access();
-    let total_events = events.len();
-    
+    let total_events = events.len();    
+
     if total_events == 0 {
         hprintln!("没有完成的事件");
         return;
     }
     
     // 计算平均响应时间
-    let mut total_response_time = 0;
-    let mut total_processing_time = 0;
-    let mut total_time = 0;
+    let mut total_response_time:u64 = 0;
+    let mut total_processing_time:u64 = 0;
+    let mut total_time:u64 = 0;
     
     // 按优先级分组的统计
     let mut high_count = 0;
-    let mut high_response_time = 0;
+    let mut high_response_time:u64 = 0;
     let mut medium_count = 0;
-    let mut medium_response_time = 0;
+    let mut medium_response_time:u64 = 0;
     let mut low_count = 0;
-    let mut low_response_time = 0;
+    let mut low_response_time:u64 = 0;
     
+
     for event in events.iter() {
-        total_response_time += event.response_time();
-        total_processing_time += event.processing_time();
-        total_time += event.total_time();
+        total_response_time += event.response_time() as u64;
+        total_processing_time += event.processing_time() as u64;
+        total_time += event.total_time() as u64;
         
         // 按优先级分组
         if event.priority >= 8 {
             high_count += 1;
-            high_response_time += event.response_time();
+            high_response_time += event.response_time() as u64;
         } else if event.priority >= 4 {
             medium_count += 1;
-            medium_response_time += event.response_time();
+            medium_response_time += event.response_time() as u64;
         } else {
             low_count += 1;
-            low_response_time += event.response_time();
+            low_response_time += event.response_time() as u64;
         }
     }
+
 
     let avg_response_time = rt_tick_to_ms(total_response_time) as f32 / total_events as f32;
     let avg_processing_time = rt_tick_to_ms(total_processing_time) as f32 / total_events as f32;
     let avg_total_time = rt_tick_to_ms(total_time) as f32 / total_events as f32;
     
-    
+
     // 打印分割线
     hprintln!("\n{}{}══════════════════════════════════════════════════{}", BOLD, CYAN, RESET);
     hprintln!("{}{}             性能测试最终结果报告             {}", BOLD, CYAN, RESET);
@@ -366,27 +377,27 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
                  RED, high_count, high_avg, high_color, high_stars, RESET);
         
         // 保存用于后面绘制图表
-        print_bar_chart("高优先级", RED, high_avg, high_avg.max(1.0));
+        print_bar_chart("高优先级", RED, high_avg, 10.0);
     }
     
     if medium_count > 0 {
         let medium_avg = rt_tick_to_ms(medium_response_time) as f32 / medium_count as f32;
-        let (medium_color, medium_stars) = rate_performance_stars(medium_avg, 5.0, 50.0);
+        let (medium_color, medium_stars) = rate_performance_stars(medium_avg, 10.0, 50.0);
         hprintln!("{}■ 中优先级事件 (4-6): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
                  YELLOW, medium_count, medium_avg, medium_color, medium_stars, RESET);
         
         // 保存用于后面绘制图表
-        print_bar_chart("中优先级", YELLOW, medium_avg, medium_avg.max(1.0));
+        print_bar_chart("中优先级", YELLOW, medium_avg, 80.0);
     }
     
     if low_count > 0 {
         let low_avg = rt_tick_to_ms(low_response_time) as f32 / low_count as f32;
-        let (low_color, low_stars) = rate_performance_stars(low_avg, 10.0, 100.0);
+        let (low_color, low_stars) = rate_performance_stars(low_avg, 20.0, 100.0);
         hprintln!("{}● 低优先级事件 (1-3): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
                  GREEN, low_count, low_avg, low_color, low_stars, RESET);
         
         // 保存用于后面绘制图表
-        print_bar_chart("低优先级", GREEN, low_avg, low_avg.max(1.0));
+        print_bar_chart("低优先级", GREEN, low_avg, 150.0);
     }
     
     hprintln!("\n{}{}══════════════════════════════════════════════════{}", BOLD, CYAN, RESET);
@@ -417,7 +428,7 @@ pub fn run_performance_test() {
         event_generator_entry as usize, 
         2*1024, 
         10, 
-        20
+        10
     );
     
     // 创建高优先级处理器线程
@@ -435,7 +446,7 @@ pub fn run_performance_test() {
         medium_priority_processor_entry as usize, 
         2*1024, 
         10, 
-        20
+        50
     );
     
     // 创建低优先级处理器线程
@@ -444,7 +455,7 @@ pub fn run_performance_test() {
         low_priority_processor_entry as usize, 
         2*1024, 
         10, 
-        20
+        100
     );
     
     // 创建结果分析器线程 (最低优先级)

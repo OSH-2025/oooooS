@@ -72,9 +72,10 @@ pub fn rt_tick_from_millisecond(ms: i32) -> u32 {
 }
 
 /// 将tick数转换为毫秒
-pub fn rt_tick_to_ms(tick: u32) -> u32 {
-    (tick * 1000) / RT_TICK_PER_SECOND
+pub fn rt_tick_to_ms(tick: u64) -> u64 {
+    (tick * 1000) / RT_TICK_PER_SECOND as u64
 }
+
 
 /// 将tick数转换为微秒
 pub fn rt_tick_to_us(tick: u32) -> u64 {
