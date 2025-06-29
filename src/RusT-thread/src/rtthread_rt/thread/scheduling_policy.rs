@@ -152,7 +152,6 @@ pub fn set_priority_scheduling() {
     scheduler.set_scheduling_policy(Box::new(PrioritySchedulingPolicy));
 }
 
-
 /// 设置调度策略为多级反馈队列调度
 pub fn set_mfq_scheduling() {
     let mut scheduler = RT_SCHEDULER.exclusive_access();
