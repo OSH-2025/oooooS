@@ -12,6 +12,8 @@ docker build -t raytest .
 
 运行方法： 
 
+运行工作节点：
+
 ``` bash
-docker run -d --name ray-head  -p 8000:8000  -p 6379:6379   raytest
+docker run -d --name ray-worker raytest ray start --address="ray-head:8000" --redis-password="1234"
 ```
