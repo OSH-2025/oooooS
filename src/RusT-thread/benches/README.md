@@ -19,7 +19,7 @@
 - 内存碎片处理性能
 - 内存使用效率测试
 
-#### allocation_comparison.rs
+#### allocation_comparison_bench.rs
 - 工作负载对比（小分配、混合分配）
 - 内存利用率测试
 - 连续操作性能
