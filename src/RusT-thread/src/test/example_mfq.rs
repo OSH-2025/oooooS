@@ -7,6 +7,12 @@ use crate::rtthread_rt::timer::*;
 use crate::rtthread_rt::hardware::*;
 use cortex_m_semihosting::hprintln;
 
+const RED: &str = "\x1b[31m";
+const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
+const BLUE: &str = "\x1b[34m";
+
+
 /// 测试线程挂起与删除
 pub extern "C" fn example_thread_1(arg: usize) -> () {
     hprintln!("example_thread_1...");
@@ -15,7 +21,7 @@ pub extern "C" fn example_thread_1(arg: usize) -> () {
     hprintln!("start_tick: {:?}", start_tick);
     loop {
         if rt_tick_get() - start_tick > 100 {
-            hprintln!("example_thread_1...");
+            hprintln!("{}example_thread_1...", RED);
             start_tick = rt_tick_get();
         }
         if rt_tick_get() - tic > 6000 {
@@ -34,7 +40,7 @@ pub extern "C" fn example_thread_2(arg: usize) -> () {
     loop {
         // hprintln!("rt_tick_get(): {:?}", rt_tick_get());
         if rt_tick_get() - start_tick > 100 {
-            hprintln!("example_thread_2...");
+            hprintln!("{}example_thread_2...", GREEN);
             start_tick = rt_tick_get();
         }
     }
@@ -48,7 +54,7 @@ pub extern "C" fn example_thread_3(arg: usize) -> () {
     hprintln!("start_tick: {:?}", start_tick);
     loop {
         if rt_tick_get() - start_tick > 100 {
-            hprintln!("example_thread_3...");
+            hprintln!("{}example_thread_3...", YELLOW);
             start_tick = rt_tick_get();
         }
     }
@@ -56,12 +62,12 @@ pub extern "C" fn example_thread_3(arg: usize) -> () {
 
 /// 一个简单的线程
 pub extern "C" fn example_thread_4(arg: usize) -> () {
-    hprintln!("example_thread_4...");
+    hprintln!("{}example_thread_4...", BLUE);
     let mut start_tick = rt_tick_get();
     hprintln!("start_tick: {:?}", start_tick);
     loop {
         if rt_tick_get() - start_tick > 100 {
-            hprintln!("example_thread_4...");
+            hprintln!("{}example_thread_4...", BLUE);
             start_tick = rt_tick_get();
         }
     }
@@ -76,16 +82,16 @@ pub extern "C" fn example_thread_4(arg: usize) -> () {
 /// 4. 最后，3，4优先级降低至与4相同，2，3，4交替运行
 pub fn run_example() {
     // hprintln!("run_example...");
-    let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 2, 1000);
-    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 1, 1000);
-    let thread_3 = rt_thread_create("example_thread_3", example_thread_3 as usize, 2*1024, 5, 1000);
-    let thread_4 = rt_thread_create("example_thread_4", example_thread_4 as usize, 2*1024, 6, 1000);
+    let thread_1 = rt_thread_create("example_thread_1", example_thread_1 as usize, 2*1024, 2, 500);
+    let thread_2 = rt_thread_create("example_thread_2", example_thread_2 as usize, 2*1024, 1, 500);
+    let thread_3 = rt_thread_create("example_thread_3", example_thread_3 as usize, 2*1024, 5, 500);
+    let thread_4 = rt_thread_create("example_thread_4", example_thread_4 as usize, 2*1024, 6, 500);
 
     let level = rt_hw_interrupt_disable();
     set_mfq_scheduling();
     rt_thread_startup(thread_1);
     rt_thread_startup(thread_2.clone());
-    rt_thread_sleep(thread_2.clone(), 10000);
+    rt_thread_sleep(thread_2.clone(), 5000);
     rt_thread_startup(thread_3);
     rt_thread_startup(thread_4);
     rt_hw_interrupt_enable(level);

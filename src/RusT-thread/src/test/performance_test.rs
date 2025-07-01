@@ -372,7 +372,7 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     // 按优先级输出结果，添加视觉元素
     if high_count > 0 {
         let high_avg = rt_tick_to_ms(high_response_time) as f32 / high_count as f32;
-        let (high_color, high_stars) = rate_performance_stars(high_avg, 3.0, 30.0);
+        let (high_color, high_stars) = rate_performance_stars(high_avg, 5.0, 30.0);
         hprintln!("{}▲ 高优先级事件 (7-10): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
                  RED, high_count, high_avg, high_color, high_stars, RESET);
         
@@ -382,7 +382,7 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     
     if medium_count > 0 {
         let medium_avg = rt_tick_to_ms(medium_response_time) as f32 / medium_count as f32;
-        let (medium_color, medium_stars) = rate_performance_stars(medium_avg, 10.0, 50.0);
+        let (medium_color, medium_stars) = rate_performance_stars(medium_avg, 20.0, 50.0);
         hprintln!("{}■ 中优先级事件 (4-6): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
                  YELLOW, medium_count, medium_avg, medium_color, medium_stars, RESET);
         
@@ -392,7 +392,7 @@ pub extern "C" fn result_analyzer_entry(arg: usize) -> () {
     
     if low_count > 0 {
         let low_avg = rt_tick_to_ms(low_response_time) as f32 / low_count as f32;
-        let (low_color, low_stars) = rate_performance_stars(low_avg, 20.0, 100.0);
+        let (low_color, low_stars) = rate_performance_stars(low_avg, 80.0, 100.0);
         hprintln!("{}● 低优先级事件 (1-3): {} 个, 平均响应时间: {:.2} ms {}{}{}", 
                  GREEN, low_count, low_avg, low_color, low_stars, RESET);
         
