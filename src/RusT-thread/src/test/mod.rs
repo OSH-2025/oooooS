@@ -19,6 +19,7 @@ pub mod performance_test;
 pub mod switch_time_test;
 pub mod comprehensive_example;
 pub mod test_interruput_latency;
+pub mod thread_creation_test;
 
 // #[cfg(feature = "test_timer")]
 pub mod test_timer;
