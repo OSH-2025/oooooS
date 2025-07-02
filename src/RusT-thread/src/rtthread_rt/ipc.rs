@@ -6,10 +6,10 @@
 //!     IPCBase: 基础 IPC 结构体
 //!     Semaphore: 信号量结构体
 //! 函数：
-//!     rt_ipc_init: 初始化 IPC 结构体
-//!     rt_ipc_list_suspend: 将线程挂起，并按优先级插入线程队列
-//!     rt_ipc_list_resume: 将线程唤醒
-//!     rt_ipc_list_resume_all: 将所有线程唤醒
+//!     _ipc_init: 初始化 IPC 结构体
+//!     _ipc_list_suspend: 将线程挂起，并按优先级插入线程队列
+//!     _ipc_list_resume: 将线程唤醒
+//!     _ipc_list_resume_all: 将所有线程唤醒
 //!     rt_sem_create: 创建并初始化 semaphore 结构体
 //!     rt_sem_delete: 删除 semaphore 结构体
 //!     rt_sem_take: 获取 semaphore
@@ -61,7 +61,7 @@ pub struct Semaphore {
 /// @param name 名称
 /// @param object_type 对象类型
 /// @return IPC 结构体
-pub fn rt_ipc_init(name: &str, object_type: u8) -> Arc<IPCBase> {
+pub fn _ipc_init(name: &str, object_type: u8) -> Arc<IPCBase> {
     let name_bytes = name.as_bytes();
     let len = name_bytes.len().min(RT_NAME_MAX);
     let mut name_array = [0u8; RT_NAME_MAX];
@@ -76,7 +76,7 @@ pub fn rt_ipc_init(name: &str, object_type: u8) -> Arc<IPCBase> {
 /// 将线程挂起，并按优先级插入线程队列
 /// @param ipc IPC 结构体
 /// @param thread 线程
-pub fn rt_ipc_list_suspend(ipc: Arc<IPCBase>, thread: Arc<RtThread>) {
+pub fn _ipc_list_suspend(ipc: Arc<IPCBase>, thread: Arc<RtThread>) {
     rt_thread_suspend(thread.clone());
     
     // 若队列为空，则直接插入队列
@@ -106,7 +106,7 @@ pub fn rt_ipc_list_suspend(ipc: Arc<IPCBase>, thread: Arc<RtThread>) {
 /// 将线程唤醒
 /// @param ipc IPC 结构体
 /// @param thread 线程
-pub fn rt_ipc_list_resume(ipc: Arc<IPCBase>) -> Option<Arc<RtThread>> {
+pub fn _ipc_list_resume(ipc: Arc<IPCBase>) -> Option<Arc<RtThread>> {
     // 取出队列第一个线程
     ipc.thread_queue.exclusive_session(|queue| {
         if queue.is_empty() {
@@ -122,7 +122,7 @@ pub fn rt_ipc_list_resume(ipc: Arc<IPCBase>) -> Option<Arc<RtThread>> {
 /// 将所有线程唤醒
 /// @param ipc IPC 结构体
 /// @param thread 线程
-pub fn rt_ipc_list_resume_all(ipc: Arc<IPCBase>) {
+pub fn _ipc_list_resume_all(ipc: Arc<IPCBase>) {
     let level = rt_hw_interrupt_disable();
     ipc.thread_queue.exclusive_session(|queue| {
         // 唤醒所有线程
@@ -148,7 +148,7 @@ pub fn rt_sem_create(name: &str, count: u32) -> RtErrT {
     let len = name_bytes.len().min(RT_NAME_MAX);
     let mut name_array = [0u8; RT_NAME_MAX];
     name_array[..len].copy_from_slice(&name_bytes[..len]);
-    let ipc_parent = rt_ipc_init(name, 1);
+    let ipc_parent = _ipc_init(name, 1);
     let sem = Arc::new(Semaphore {
         parent: unsafe { RTIntrFreeCell::new(ipc_parent) },
         count: Mutex::new(count),
@@ -160,7 +160,7 @@ pub fn rt_sem_create(name: &str, count: u32) -> RtErrT {
 /// @param semaphore 结构体
 /// @return RT_EOK: 删除成功
 pub fn rt_sem_delete(sem: Arc<Semaphore>) -> RtErrT {
-    rt_ipc_list_resume_all(sem.parent.exclusive_session(|ipc| ipc.clone()));
+    _ipc_list_resume_all(sem.parent.exclusive_session(|ipc| ipc.clone()));
     RT_EOK
 }
 
@@ -182,7 +182,7 @@ pub fn rt_sem_take(sem: Arc<Semaphore>, timeout: usize) -> RtErrT {
         else {
             let thread = rt_thread_self().unwrap();
             thread.inner.exclusive_access().error = RT_EOK;
-            rt_ipc_list_suspend(sem.parent.exclusive_session(|ipc| ipc.clone()), thread.clone());
+            _ipc_list_suspend(sem.parent.exclusive_session(|ipc| ipc.clone()), thread.clone());
             hprintln!("rt_sem_take: {:?}", thread);
             hprintln!("进入计时，挂起");
             if timeout > 0 {
@@ -225,7 +225,7 @@ pub fn rt_sem_release(sem: Arc<Semaphore>) -> RtErrT {
     let level = rt_hw_interrupt_disable();
     // 若挂起队列非空，则需要唤醒一个线程
     if !sem.parent.exclusive_session(|ipc| ipc.thread_queue.exclusive_session(|queue| queue.is_empty())) {
-        let thread = rt_ipc_list_resume(sem.parent.exclusive_session(|ipc| ipc.clone()));
+        let thread = _ipc_list_resume(sem.parent.exclusive_session(|ipc| ipc.clone()));
         if thread.is_some() {
             need_schedule = true;
         }
