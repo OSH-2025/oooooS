@@ -1086,3 +1086,11 @@ RusT-thread 是我们团队基于 Rust 语言实现的轻量级实时操作系�
 [3]  陈渝, 尹霞, 张峰. Rust语言机制与安全性. 软件学报, 2019
 
 [4]  尹霞, 张峰, 陈渝. Rust安全编程模式. 软件学报, 2019
+
+[5] [Criterion 测试工具](https://docs.rs/criterion/latest/criterion/) https://docs.rs/criterion/latest/criterion/
+
+[6] [Criterion 测试教程](https://bencher.dev/learn/benchmarking/rust/criterion/) https://bencher.dev/learn/benchmarking/rust/criterion/
+
+[7] [RT-Thread 内核介绍](https://zhuanlan.zhihu.com/p/641915283) https://zhuanlan.zhihu.com/p/641915283
+
+[8] [Rust+嵌入式开发](https://zhuanlan.zhihu.com/p/628575325) https://zhuanlan.zhihu.com/p/628575325
