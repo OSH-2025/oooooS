@@ -82,6 +82,9 @@ pub fn rt_tick_to_us(tick: u32) -> u64 {
     (tick as u64 * 1000000)  / RT_TICK_PER_SECOND as u64
 }
 
+pub fn rt_tick_to_ns(tick: u32) -> u64 {
+    (tick as u64 * 1000000000)  / RT_TICK_PER_SECOND as u64
+}
 
 /// 获取自启动以来经过的毫秒数
 pub fn rt_tick_get_millisecond() -> u32 {
