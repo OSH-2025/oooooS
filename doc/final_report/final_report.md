@@ -264,11 +264,28 @@ RusT-Thread 中的小内存分配器主要体现在如下几个文件中：
 
 - oom.rs：内存溢出处理
 
-<img src="img/image-20250701223035154.png" alt="image-20250701223035154" style="zoom:67%;" />
-
 表示内存块的结构体：
 
-<img src="img/image-20250701224217882.png" alt="image-20250701224217882" style="zoom:50%;" />
+```rust
+///RTSmallMemItem 结构体表示一个小内存块的基本信息，主要用于管理内存池中的单个内存块
+#[repr(c)]
+pub struct RTSmallMemItem {
+	///内存池指针
+	pub pool ptr: usize,
+  #[cfg(target_pointer_width="64")]// 条件编译，64位系统生效
+  pub resv:u32,//保留字段，用于对齐，64位系统下使用
+	///下一个空闲块的指针
+	pub next: usize,
+	///前一个空闲块的指针
+	pub prev: usize,
+	#[cfg(feature ="mem_trace")]//条件编译，内存跟踪生效
+  #[cfg(target pointer_width="64")]//条件编译，64位系统生效
+  pub thread:[u8;8],//线程ID，64位系统下使用
+  #[cfg(feature="mem_trace")]//条件编译，内存跟踪生效
+  #[cfg(target pointer_width ="32")]//条件编译，32位系统生效
+  pub thread:[u8;4],//线程ID，32位系统下使用
+}
+```
 
 小内存分配算法的原理是通过维护一块连续的内存池，将其划分为带有头部信息的内存块，并用链表管理空闲和已用块。分配时遍历空闲链表，找到足够大的块后分割并标记为已用；释放时将块标记为空闲，并尝试与相邻空闲块合并以减少碎片。整个过程包含边界检查和中断保护，确保分配、释放的安全性和原子性。
 
@@ -276,13 +293,19 @@ RusT-Thread 中的小内存分配器主要体现在如下几个文件中：
 
 + 边界检查与安全性提升
 
-  ![image-20250701223134299](img/image-20250701223134299.png)
-
   + C 代码主要依赖 RT_ASSERT 等宏进行运行时断言，且大量裸指针操作，容易出现悬垂指针、越界、重复释放等问题，这些断言如果被关闭，代码安全性大幅下降
 
-  ![image-20250701223439992](img/image-20250701223439992.png)
+  ```c
+  debug_assert!((mem as usize) >= ((*small_mem).heap_ptr as usize));
+  debug assert!((mem as usize) < ((*small_mem).heap_end as usize));
+  debug assert!(mem is used(mem));
+  ```
 
-  ![image-20250701223450850](img/image-20250701223450850.png)
+  ```c
+  if m.is_null()||size == 0 {
+  	return ptr::null mut();
+  }
+  ```
 
   + Rust 利用类型系统和所有权机制，天然防止了大部分内存安全问题，同时 rt_smem_free、rt_smem_alloc 等函数在操作前都做了空指针和边界检查
   + Rust 的 debug_assert! 只在 debug 模式下生效，release 下可关闭，但类型系统和生命周期机制依然提供了额外的安全保障
@@ -291,15 +314,24 @@ RusT-Thread 中的小内存分配器主要体现在如下几个文件中：
 
 + 中断保护
 
-  ![image-20250701223635722](img/image-20250701223635722.png)
-
   + C 语言通过 rt_hw_interrupt_disable/rt_hw_interrupt_enable 手动保护关键区，防止并发破坏堆结构
 
-    ![image-20250701223724924](img/image-20250701223724924.png)
+  ```c
+  rt_base_t_level =rt_hw_interrupt_disable();
+  // ...关键区.
+  rt_hw_interrupt_enable(level);
+  ```
 
   + Rust 同样调用 rt_hw_interrupt_disable/rt_hw_interrupt_enable，但更易于用 RAII（资源自动释放）等机制进行封装，减少人为失误
 
+  ```rust
+  let level =rt_hw_interrupt_disable();
+  //...关键区 ...
+  rt_hw_interrupt_enable(level);
+  ```
+
   + 并且 Rust 代码结构更清晰，便于后续用 RAII 或作用域自动恢复中断，提升健壮性
+
 
 ### 线程通信层
 
