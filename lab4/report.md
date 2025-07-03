@@ -21,14 +21,15 @@
   - [五、单机版部署与性能测试](#五单机版部署与性能测试)
     - [（一）部署过程](#一部署过程)
     - [（二）性能测试](#二性能测试)
+    - [（三）测试结果](#三测试结果)
   - [六、分布式部署与性能测试](#六分布式部署与性能测试)
     - [（一）部署方式](#一部署方式)
     - [（二）性能测试方法](#二性能测试方法)
-    - [（三）测试结果](#三测试结果)
+    - [（三）测试结果](#三测试结果-1)
   - [七、基于Docker的分布式部署与性能测试](#七基于docker的分布式部署与性能测试)
     - [（一）Docker部署的优势](#一docker部署的优势)
     - [（二）Docker部署过程](#二docker部署过程)
-    - [（三）测试结果](#三测试结果-1)
+    - [（三）测试结果](#三测试结果-2)
   - [八、实验报告发布](#八实验报告发布)
 
 
@@ -59,7 +60,7 @@
 ### （三）系统级稳定性指标
 1. **错误率（Error Rate）**
     - **定义**：任务失败或异常的比例（%）。
-    - **合理性**：高错误率可能因节点通信故障或资源竞争，需结合Ray Serve的副本健康状态（如`ray_serve_deployment_error_counter_total`）诊断。
+    - **合理性**：高错误率可能因节点通信故障或资源竞争，高错误率可能因节点通信故障或资源竞争，影响系统稳定性。
 2. **队列长度（Queue Length）**
     - **定义**：待处理任务的积压数量。
     - **合理性**：长队列暴露任务分配不均或资源瓶颈，需动态调整Actor数量或启用自动扩缩容。
@@ -133,7 +134,7 @@ deactivate
 见上述的环境配置部分，单机版部署与配置过程与分布式部署类似，只需在单台机器上启动Ray服务即可。
 
 ### （二）性能测试
-1. 吞吐量测试：设计测试用例，模拟大素数寻找与分解任务。记录单位时间内完成的任务数量，计算吞吐量。在测试过程中，观察不同任务规模下吞吐量的变化情况，分析Ray框架的任务调度机制对吞吐量的影响。在某次测试中，Ray每秒处理了[X]个素数。
+1. 吞吐量测试：设计测试用例，模拟大素数寻找与分解任务。记录单位时间内完成的任务数量，计算吞吐量。在测试过程中，观察不同任务规模下吞吐量的变化情况，分析Ray框架的任务调度机制对吞吐量的影响。
 
     ```python
     @ray.remote
@@ -144,7 +145,7 @@ deactivate
     primes = ray.get([find_prime.remote(1024) for _ in range(100)])
     ```
 
-2. 资源利用率测试：使用系统监控工具或Ray自带的资源监控功能，实时监测CPU和内存的使用情况。在任务执行过程中，记录CPU利用率和内存利用率的变化曲线，分析资源利用的高峰期与低谷期。发现CPU利用率在任务密集执行时达到[X]%，内存利用率为[X]GB。
+2. 资源利用率测试：使用系统监控工具或Ray自带的资源监控功能，实时监测CPU和内存的使用情况。在任务执行过程中，记录CPU利用率和内存利用率的变化曲线，分析资源利用的高峰期与低谷期。
 
     ```python
     import psutil
@@ -152,6 +153,34 @@ deactivate
     cpu_percent = psutil.cpu_percent(interval=1)
     memory_percent = psutil.virtual_memory().percent
     ```
+
+3. 节点利用效率测试：计算每个节点的实际工作时间与存活总时间，评估节点在任务执行中的实际贡献。
+
+    ```python
+    node_uptime = ray.nodes()[0]['uptime']  # 获取节点存活时间
+    node_work_time = ray.get_runtime_context().get_node_work_time()  # 获取实际工作时间
+    efficiency = node_work_time / node_uptime if node_uptime > 0 else 0
+    ```
+
+### （三）测试结果
+
+在单机版测试中，我们修改单节点的Worker数量,测试得到以下数据。具体测试结果如下：
+
+CPU利用率随着Worker数量的增加而逐渐上升，但在Worker数量达到一定程度后，CPU利用率趋于平稳。
+![img](/lab4/img/cluster_size_1/avg_cpu_vs_total_workers.png)
+
+内存使用量随着Worker数量的增加而逐渐上升。
+![img](/lab4/img/cluster_size_1/avg_memory_vs_total_workers.png)
+
+吞吐量随着Worker数量的增加而显著提升，表明Ray框架能够有效利用多核CPU进行并行计算。
+
+然而，由于我们使用的虚拟机CPU仅为2核，吞吐量在Worker数量达到2时就达到了峰值，之后由于资源竞争与调度开销的增加，吞吐量略有下降。
+![img](/lab4/img/cluster_size_1/throughput_vs_total_workers.png)
+
+显然，与Worker = 1相比，worker数量为2时，吞吐量提升了约一倍，达到了实验所需的优化要求。
+
+节点利用效率随着Worker数量的增加而逐渐下降，可能是由于任务调度与资源分配的开销增加所致。
+![img](/lab4/img/cluster_size_1/efficiency_vs_total_workers.png)
 
 ## 六、分布式部署与性能测试
 
@@ -216,6 +245,131 @@ Docker容器化技术为分布式部署提供了诸多便利。它能够将Ray�
 
 具体的Dockerfile在[`lab4/docker/Dockerfile`](/lab4/docker/Dockerfile)。
 
+```dockerfile
+# 使用Ubuntu 24.04作为基础镜像
+FROM ubuntu:24.04
+
+# 构建参数 - 可以在构建时选择镜像源
+ARG APT_MIRROR=tuna
+ARG PIP_MIRROR=tuna
+
+# 设置环境变量避免交互式提示
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 首先更新包列表并安装证书相关包
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    apt-transport-https \
+    software-properties-common \
+    gpg-agent \
+    curl \
+    wget && \
+    apt-get clean
+
+# 配置国内APT镜像源 (使用HTTP避免证书问题)
+RUN case "$APT_MIRROR" in \
+    "tuna") \
+        echo "" && \
+        sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
+        sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.tuna.tsinghua.edu.cn/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources ;; \
+    "aliyun") \
+        echo "" && \
+        sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
+        sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources ;; \
+    "ustc") \
+        echo "" && \
+        sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.ustc.edu.cn/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
+        sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.ustc.edu.cn/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources ;; \
+    "163") \
+        echo "" && \
+        sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.163.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
+        sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.163.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources ;; \
+    *) \
+        echo "" ;; \
+    esac
+
+# 更新软件源
+RUN apt-get update
+
+# 添加deadsnakes PPA以获取Python3.9
+RUN add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update
+
+# 安装核心依赖和指定版本的Python
+RUN apt-get install -y --no-install-recommends \
+    python3.9 \
+    python3.9-dev \
+    python3.9-venv \
+    python3.9-distutils \
+    python3-pip \
+    net-tools \
+    redis-tools && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 设置Python版本
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1 && \
+    update-alternatives --set python /usr/bin/python3.9
+
+# 确保pip指向Python3.9
+# RUN python3.9 -m pip install --upgrade pip --break-system-packages
+
+# 创建非root用户并设置Ray运行环境
+RUN useradd -m -s /bin/bash rayuser && \
+    mkdir -p /home/rayuser/.pip && \
+    chown -R rayuser:rayuser /home/rayuser
+
+# 切换到非root用户
+USER rayuser
+WORKDIR /home/rayuser/raytest
+
+# 复制pip配置到用户目录
+RUN case "$PIP_MIRROR" in \
+    "tuna") \
+        echo "[global]" > /home/rayuser/.pip/pip.conf && \
+        echo "index-url = https://pypi.tuna.tsinghua.edu.cn/simple" >> /home/rayuser/.pip/pip.conf && \
+        echo "trusted-host = pypi.tuna.tsinghua.edu.cn" >> /home/rayuser/.pip/pip.conf ;; \
+    "aliyun") \
+        echo "[global]" > /home/rayuser/.pip/pip.conf && \
+        echo "index-url = https://mirrors.aliyun.com/pypi/simple/" >> /home/rayuser/.pip/pip.conf && \
+        echo "trusted-host = mirrors.aliyun.com" >> /home/rayuser/.pip/pip.conf ;; \
+    "douban") \
+        echo "[global]" > /home/rayuser/.pip/pip.conf && \
+        echo "index-url = https://pypi.doubanio.com/simple/" >> /home/rayuser/.pip/pip.conf && \
+        echo "trusted-host = pypi.doubanio.com" >> /home/rayuser/.pip/pip.conf ;; \
+    "ustc") \
+        echo "[global]" > /home/rayuser/.pip/pip.conf && \
+        echo "index-url = https://pypi.mirrors.ustc.edu.cn/simple/" >> /home/rayuser/.pip/pip.conf && \
+        echo "trusted-host = pypi.mirrors.ustc.edu.cn" >> /home/rayuser/.pip/pip.conf ;; \
+    *) \
+        echo "使用默认pip源..." ;; \
+    esac
+
+# 创建虚拟环境
+RUN python3.9 -m venv rayenv
+
+# 安装Python依赖
+RUN . rayenv/bin/activate && \
+    pip install --no-cache-dir "ray[default]" gmpy2
+
+# 暴露Ray和Redis端口
+EXPOSE 8000 6279
+
+# 添加环境变量用于配置Redis密码
+ENV REDIS_PASSWORD=changeme123
+
+# 添加健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ray status || exit 1
+
+# 设置入口点
+ENTRYPOINT ["/bin/bash", "-c", "source rayenv/bin/activate && exec \"$@\"", "--"]
+
+# 默认启动Ray head节点
+CMD ["ray", "start", "--head", "--port=8000", "--redis-password=$REDIS_PASSWORD"]
+```
+
 启动Docker容器：在每台服务器上，使用Docker命令启动容器。
 
 构建方法： 
@@ -229,7 +383,7 @@ docker build -t raytest .
 运行头节点：
 
 ``` bash
-docker run -d --name ray-head -p 8000:8000 raytest ray start --head --port=8000 --redis-password="1234"
+docker run -d --name ray-head -p 8000:8000 raytest ray start --head --port=8000
 ```
 
 运行工作节点：
@@ -243,4 +397,4 @@ docker run -d --name ray-worker raytest ray start --address="xxx.xxx.xx.xx:8000"
 
 ## 八、实验报告发布
 
-本次实验报告已发布在[公开媒体链接]，报告详细记录了实验过程、性能测试结果与分析总结，供读者参考与交流。
+本次实验报告已发布在[罗浩民的个人博客上](https://luohaomin.github.io/Luo-Haomin/2025/07/03/Ray分布式计算框架测试报告/)，报告详细记录了实验过程、性能测试结果与分析总结，供读者参考与交流。
