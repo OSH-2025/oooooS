@@ -106,7 +106,7 @@ RUN . rayenv/bin/activate && \
     pip install --no-cache-dir "ray[default]" gmpy2
 
 # 暴露Ray和Redis端口
-EXPOSE 8000 6379
+EXPOSE 8000 6279
 
 # 添加环境变量用于配置Redis密码
 ENV REDIS_PASSWORD=changeme123
