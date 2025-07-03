@@ -12,6 +12,7 @@ use crate::test::example_mfq;
 use crate::test::example;
 use crate::test::performance_test;
 use crate::test::switch_time_test;
+use crate::test::test_interruput_latency;
 use crate::rtthread_rt::thread::rt_thread_yield;
 use crate::rtthread_rt::timer::rt_tick_get;
 
@@ -26,6 +27,7 @@ pub extern "C" fn main_entry(arg: usize) -> () {
     // example_mfq::run_example();
     // performance_test::run_performance_test();
     // switch_time_test::test_thread_switch_time();
+    // test_interruput_latency::run_precise_interrupt_latency_test();
     // 用户主线程入口
     let mut tick = rt_tick_get();
     loop{

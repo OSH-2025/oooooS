@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#* 使用方法：在脚本所在目录下执行 ./run_switch_tests.sh 自定义测试次数
-#* 确保原系统执行cargo run 命令时运行的是线程切换的测试
+#* 使用方法：在脚本所在目录下执行 ./run_thread_creation_tests.sh 自定义测试次数
+#* 确保原系统执行cargo run 命令时运行的是线程创建的测试
 
 # 设置测试次数
 TEST_COUNT=5
@@ -9,7 +9,7 @@ if [ $# -gt 0 ]; then
   TEST_COUNT=$1
 fi
 
-echo "开始进行 $TEST_COUNT 次线程切换时间测试..."
+echo "开始进行 $TEST_COUNT 次线程创建时间测试..."
 
 # 用于存储所有测试结果的数组
 declare -a RESULTS
@@ -24,13 +24,13 @@ for ((i=1; i<=$TEST_COUNT; i++)); do
   TEMP_OUTPUT_FILE=$(mktemp)
   
   # 使用超时并在后台运行cargo，同时将输出重定向到临时文件
-  timeout --foreground 2s cargo run > "$TEMP_OUTPUT_FILE" 2>&1 &
+  timeout --foreground 5s cargo run > "$TEMP_OUTPUT_FILE" 2>&1 &
   CARGO_PID=$!
   
   # 监控输出文件，直到发现测试完成的标记
   COMPLETE=0
   while [ $COMPLETE -eq 0 ]; do
-    if grep -q "线程切换测试完成" "$TEMP_OUTPUT_FILE" || grep -q "平均切换时间" "$TEMP_OUTPUT_FILE"; then
+    if grep -q "线程创建时间测试完成" "$TEMP_OUTPUT_FILE" || grep -q "平均每个线程创建时间" "$TEMP_OUTPUT_FILE"; then
       echo "测试 $i 已完成"
       COMPLETE=1
       # 终止cargo进程及其子进程
@@ -53,11 +53,11 @@ for ((i=1; i<=$TEST_COUNT; i++)); do
   # 清理临时文件
   rm -f "$TEMP_OUTPUT_FILE"
   
-  # 从输出中提取平均切换时间（微秒）
-  AVG_TIME=$(echo "$OUTPUT" | grep "平均切换时间" | awk -F'(' '{print $2}' | awk -F' us)' '{print $1}')
+  # 从输出中提取平均创建时间（微秒）
+  AVG_TIME=$(echo "$OUTPUT" | grep "平均每个线程创建时间.*微秒" | awk '{print $(NF-1)}')
   
   if [ -n "$AVG_TIME" ]; then
-    echo "测试 $i 完成: 平均切换时间 = $AVG_TIME us"
+    echo "测试 $i 完成: 平均线程创建时间 = $AVG_TIME us"
     RESULTS+=($AVG_TIME)
   else
     echo "警告: 测试 $i 未能获取结果"
@@ -102,7 +102,7 @@ if [ $COUNT -gt 0 ]; then
   echo "测试结果汇总"
   echo "===================="
   echo "总测试次数: $COUNT"
-  echo "所有测试的平均切换时间: $AVERAGE us"
+  echo "所有测试的平均线程创建时间: $AVERAGE us"
   echo "最小值: $MIN_VALUE us"
   echo "最大值: $MAX_VALUE us"
   
