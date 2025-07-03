@@ -1,6 +1,9 @@
-# lab4 README
+# lab4
 
-# Ray集群大素数寻找与分解测试程序
+> 实验报告在[Lab4/report.md](/lab4/report.md)中！
+> 以下仅为实验代码和配置文件的简要说明。
+
+## Ray集群大素数寻找与分解测试程序
 
 源代码在lab4/code目录下，包含以下文件：'
 
@@ -13,11 +16,9 @@
 - `run_cluster_tests.sh`: 集群运行脚本，自动启动Ray集群并执行测试任务。
 
 
-# Docker集群配置和运行指南
+## Docker集群配置和运行指南
 
 进入lab4/docker目录后，执行以下命令：
-
-## Dockerfile
 
 构建方法： 
 
